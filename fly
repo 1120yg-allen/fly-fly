@@ -1,0 +1,614 @@
+#!/usr/bin/env python3
+"""
+flight_cross_search.py
+
+Cross-references two independent, unofficial Google Flights scrapers for the
+same route/date, merges the results, flags any price disagreement between
+the two sources, and prints the top N best combinations.
+
+    Source A -- fli           (pip package "flights")   -- engine behind
+                                github.com/avlihachev/flts
+    Source B -- fast_flights   (pip package "fast_flights") -- engine behind
+                                github.com/KananVyas/flyGPT
+
+Both libraries scrape Google Flights independently (different code, different
+parsing logic), so when they agree on a flight/price it's a useful confidence
+signal, and when they disagree it's worth a manual double-check before booking.
+
+------------------------------------------------------------------------------
+INSTALL (on your own machine -- this needs live internet access to Google
+Flights, which is not available in the sandbox this script was written in)
+
+    pip install flights fast_flights          # or: uv add flights fast_flights
+
+USAGE
+
+    python flight_cross_search.py --from TPE --to ICN --date 2026-09-15
+    python flight_cross_search.py --from TPE --to ICN --date 2026-09-15 \
+        --return-date 2026-09-20 --airlines CI,BR --max-stops 1 --top 5
+    python flight_cross_search.py --from TPE --to NRT --date 2026-10-01 \
+        --csv results.csv
+
+    # offline sanity check of the merge/ranking logic (no network needed):
+    python flight_cross_search.py --self-test
+
+ARGUMENTS
+    --from / --to       IATA airport codes (required, e.g. TPE, ICN, NRT)
+    --date              Outbound date, YYYY-MM-DD (required unless --self-test)
+    --return-date       Return date, YYYY-MM-DD (omit for one-way)
+    --airlines          Comma-separated IATA airline codes to filter to,
+                         e.g. CI,BR,JX  (omit for all airlines)
+    --max-stops         any | nonstop | 1 | 2   (default: any)
+    --seat              economy | premium_economy | business | first
+    --currency          ISO currency code, default TWD
+    --top               how many results to print, default 5
+    --csv PATH          also write full merged results to a CSV file
+
+KNOWN LIMITATIONS (please read before trusting the output)
+    * fast_flights does not expose flight numbers, only airline + times, so
+      cross-source matching of "the same flight" is approximate (same
+      airline, same route, departure times within MATCH_WINDOW_MIN minutes).
+    * Filtering to one *specific* flight number (as opposed to an airline)
+      only works against the fli side, since fast_flights doesn't return
+      flight numbers at all -- see filter_by_flight_number().
+    * Round-trip combo pricing on the fli side follows Google's own combo
+      logic (see comment in search_fli): the price on the *return* leg
+      result is the total round-trip price, not the return leg's price.
+      This was verified against the library's source code and docstrings,
+      not against a live response, since this sandbox has no route to
+      Google's servers -- re-check the first live round-trip run.
+"""
+
+from __future__ import annotations
+
+import argparse
+import concurrent.futures
+import csv as csv_module
+import sys
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Optional
+
+MATCH_WINDOW_MIN = 20  # minutes of departure-time slack when matching across sources
+
+
+# ==============================================================================
+# Normalized result type -- both sources get converted into this before merging
+# ==============================================================================
+
+
+@dataclass
+class FlightOption:
+    sources: list[str]                      # ["fli"], ["fast_flights"], or both once merged
+    airline_name: str                       # full airline name, used for cross-matching
+    airline_code: str                       # IATA code if known, else ""
+    flight_numbers: list[str]               # only fli exposes these
+    depart: Optional[datetime]
+    arrive: Optional[datetime]
+    duration_min: Optional[int]
+    stops: int
+    price: dict[str, float]                 # {"fli": 320.0, "fast_flights": 315.0}
+    currency: dict[str, str]
+    route_desc: str = ""
+
+    def best_price(self) -> float:
+        return min(self.price.values())
+
+    def price_spread_pct(self) -> Optional[float]:
+        if len(self.price) < 2:
+            return None
+        vals = list(self.price.values())
+        return (max(vals) - min(vals)) / min(vals) * 100
+
+    def merge_with(self, other: "FlightOption") -> "FlightOption":
+        """Combine two matched options (one per source) into a single row."""
+        merged_price = {**self.price, **other.price}
+        merged_currency = {**self.currency, **other.currency}
+        return FlightOption(
+            sources=sorted(set(self.sources) | set(other.sources)),
+            airline_name=self.airline_name or other.airline_name,
+            airline_code=self.airline_code or other.airline_code,
+            flight_numbers=self.flight_numbers or other.flight_numbers,
+            depart=self.depart or other.depart,
+            arrive=self.arrive or other.arrive,
+            duration_min=self.duration_min or other.duration_min,
+            stops=min(self.stops, other.stops),
+            price=merged_price,
+            currency=merged_currency,
+            route_desc=self.route_desc or other.route_desc,
+        )
+
+
+# ==============================================================================
+# Source A: fli  (flts's engine)
+# ==============================================================================
+
+
+def search_fli(
+    origin: str,
+    destination: str,
+    date: str,
+    return_date: str | None = None,
+    airlines: list[str] | None = None,
+    max_stops: str = "any",
+    seat_type: str = "economy",
+    currency: str = "TWD",
+    top_n: int = 10,
+) -> list[FlightOption]:
+    """Query Google Flights via the `fli` library (engine behind flts)."""
+    from fli.models import (
+        Airline,
+        Airport,
+        FlightSearchFilters,
+        FlightSegment,
+        MaxStops,
+        PassengerInfo,
+        SeatType,
+        SortBy,
+        TripType,
+    )
+    from fli.search import SearchFlights
+
+    stops_map = {
+        "any": MaxStops.ANY,
+        "nonstop": MaxStops.NON_STOP,
+        "1": MaxStops.ONE_STOP_OR_FEWER,
+        "2": MaxStops.TWO_OR_FEWER_STOPS,
+    }
+    seat_map = {
+        "economy": SeatType.ECONOMY,
+        "premium_economy": SeatType.PREMIUM_ECONOMY,
+        "business": SeatType.BUSINESS,
+        "first": SeatType.FIRST,
+    }
+
+    trip_type = TripType.ROUND_TRIP if return_date else TripType.ONE_WAY
+    segments = [
+        FlightSegment(
+            departure_airport=[[Airport[origin.upper()], 0]],
+            arrival_airport=[[Airport[destination.upper()], 0]],
+            travel_date=date,
+        )
+    ]
+    if return_date:
+        segments.append(
+            FlightSegment(
+                departure_airport=[[Airport[destination.upper()], 0]],
+                arrival_airport=[[Airport[origin.upper()], 0]],
+                travel_date=return_date,
+            )
+        )
+
+    filters = FlightSearchFilters(
+        trip_type=trip_type,
+        passenger_info=PassengerInfo(adults=1),
+        flight_segments=segments,
+        seat_type=seat_map.get(seat_type, SeatType.ECONOMY),
+        stops=stops_map.get(max_stops, MaxStops.ANY),
+        sort_by=SortBy.CHEAPEST,
+    )
+    if airlines:
+        filters.airlines = [Airline[a.upper()] for a in airlines]
+
+    results = SearchFlights().search(filters, top_n=top_n, currency=currency)
+    options: list[FlightOption] = []
+
+    for r in results or []:
+        if isinstance(r, tuple):
+            # Round trip: (outbound_leg_result, return_leg_result, ...).
+            # Per fli's own docs, the *last* segment's price is the total
+            # combo price once the earlier legs are selected -- not the
+            # standalone price of that segment alone.
+            outbound, *rest = r
+            final_leg = rest[-1] if rest else outbound
+            all_legs = [leg for seg in r for leg in seg.legs]
+            total_duration = sum(seg.duration for seg in r if seg.duration)
+            price = final_leg.price
+            cur = final_leg.currency
+            stops_total = sum(seg.stops for seg in r)
+            depart = outbound.legs[0].departure_datetime
+            arrive = rest[-1].legs[-1].arrival_datetime if rest else outbound.legs[-1].arrival_datetime
+        else:
+            all_legs = r.legs
+            total_duration = r.duration
+            price = r.price
+            cur = r.currency
+            stops_total = r.stops
+            depart = r.legs[0].departure_datetime
+            arrive = r.legs[-1].arrival_datetime
+
+        options.append(
+            FlightOption(
+                sources=["fli"],
+                airline_name=all_legs[0].airline.value,
+                airline_code=all_legs[0].airline.name,
+                flight_numbers=[leg.flight_number for leg in all_legs],
+                depart=depart,
+                arrive=arrive,
+                duration_min=total_duration,
+                stops=stops_total,
+                price={"fli": float(price)},
+                currency={"fli": str(cur)},
+                route_desc=" -> ".join([all_legs[0].departure_airport.name]
+                                        + [leg.arrival_airport.name for leg in all_legs]),
+            )
+        )
+    return options
+
+
+# ==============================================================================
+# Source B: fast_flights  (flyGPT's engine)
+# ==============================================================================
+
+
+def _simple_dt_to_datetime(sdt) -> Optional[datetime]:
+    if sdt is None:
+        return None
+    y, m, d = sdt.date
+    hh, mm = sdt.time
+    return datetime(y, m, d, hh, mm)
+
+
+def search_fast_flights(
+    origin: str,
+    destination: str,
+    date: str,
+    return_date: str | None = None,
+    airlines: list[str] | None = None,
+    max_stops: int | None = None,
+    seat: str = "economy",
+    currency: str = "TWD",
+) -> list[FlightOption]:
+    """Query Google Flights via the `fast_flights` library (engine behind flyGPT)."""
+    from fast_flights import FlightQuery, Passengers, create_filter, get_flights
+
+    flight_queries = [
+        FlightQuery(
+            date=date,
+            from_airport=origin.upper(),
+            to_airport=destination.upper(),
+            max_stops=max_stops,
+            airlines=airlines,
+        )
+    ]
+    trip = "one-way"
+    if return_date:
+        flight_queries.append(
+            FlightQuery(
+                date=return_date,
+                from_airport=destination.upper(),
+                to_airport=origin.upper(),
+                max_stops=max_stops,
+                airlines=airlines,
+            )
+        )
+        trip = "round-trip"
+
+    query = create_filter(
+        flights=flight_queries,
+        seat=seat,
+        trip=trip,
+        passengers=Passengers(adults=1),
+        currency=currency,
+        max_stops=max_stops,
+    )
+    result = get_flights(query)
+
+    options: list[FlightOption] = []
+    for f in result:
+        legs = f.flights
+        if not legs:
+            continue
+        total_duration = sum(leg.duration for leg in legs if leg.duration) or None
+        airline_full = f.airlines[0] if f.airlines else "Unknown"
+        options.append(
+            FlightOption(
+                sources=["fast_flights"],
+                airline_name=airline_full,
+                airline_code="",  # not exposed by this library
+                flight_numbers=[],  # not exposed by this library
+                depart=_simple_dt_to_datetime(legs[0].departure),
+                arrive=_simple_dt_to_datetime(legs[-1].arrival),
+                duration_min=total_duration,
+                stops=len(legs) - 1,
+                price={"fast_flights": float(f.price)},
+                currency={"fast_flights": currency},
+                route_desc=" -> ".join(
+                    [legs[0].from_airport.code] + [leg.to_airport.code for leg in legs]
+                ),
+            )
+        )
+    return options
+
+
+# ==============================================================================
+# Cross-referencing / merging
+# ==============================================================================
+
+
+def cross_reference(fli_options: list[FlightOption], ff_options: list[FlightOption]) -> list[FlightOption]:
+    """Match options across the two sources on (airline + departure time window),
+    merging matches into one row with both prices attached, and passing through
+    anything that only one source found."""
+    merged: list[FlightOption] = []
+    used_ff = set()
+
+    for a in fli_options:
+        match_idx = None
+        for i, b in enumerate(ff_options):
+            if i in used_ff:
+                continue
+            if not a.depart or not b.depart:
+                continue
+            same_airline = a.airline_name.strip().lower() == b.airline_name.strip().lower()
+            close_time = abs((a.depart - b.depart).total_seconds()) <= MATCH_WINDOW_MIN * 60
+            if same_airline and close_time:
+                match_idx = i
+                break
+        if match_idx is not None:
+            merged.append(a.merge_with(ff_options[match_idx]))
+            used_ff.add(match_idx)
+        else:
+            merged.append(a)
+
+    for i, b in enumerate(ff_options):
+        if i not in used_ff:
+            merged.append(b)
+
+    return merged
+
+
+def filter_by_flight_number(options: list[FlightOption], flight_number: str) -> list[FlightOption]:
+    """Keep only options that include this exact flight number.
+    Only works for options sourced from fli -- fast_flights doesn't expose
+    flight numbers, so fast_flights-only rows are dropped by this filter."""
+    fn = flight_number.upper().replace(" ", "")
+    return [o for o in options if any(fn == f.upper().replace(" ", "") for f in o.flight_numbers)]
+
+
+# ==============================================================================
+# Ranking
+# ==============================================================================
+
+
+def rank_top_n(
+    options: list[FlightOption],
+    n: int = 5,
+    weight_price: float = 0.5,
+    weight_duration: float = 0.3,
+    weight_stops: float = 0.2,
+) -> list[FlightOption]:
+    """Composite score: lower price / duration / stops is better. Each factor
+    is min-max normalized across the candidate set, then blended by weight.
+    A small bonus is given to options confirmed by both sources.
+
+    Duration's weight is additionally dampened by how much it actually varies
+    (in absolute minutes) across the candidate set, reaching full weight only
+    once the spread hits 60+ minutes. Without this, a trivial 10-minute gap
+    within an otherwise similar set would get min-max normalized to "worst
+    possible duration" and could outweigh a real price difference of
+    thousands -- min-max normalization alone doesn't know the difference
+    between a 10-minute spread and a 5-hour one."""
+    valid = [o for o in options if o.price]
+    if not valid:
+        return []
+
+    prices = [o.best_price() for o in valid]
+    durations = [o.duration_min for o in valid if o.duration_min is not None]
+    p_min, p_max = min(prices), max(prices)
+    d_min, d_max = (min(durations), max(durations)) if durations else (0, 0)
+    s_min, s_max = min(o.stops for o in valid), max(o.stops for o in valid)
+    duration_dampen = min(1.0, (d_max - d_min) / 60.0) if durations else 0.0
+
+    def norm(val, lo, hi):
+        if hi == lo:
+            return 0.0
+        return (val - lo) / (hi - lo)
+
+    def score(o: FlightOption) -> float:
+        p_score = norm(o.best_price(), p_min, p_max)
+        d_score = norm(o.duration_min, d_min, d_max) if o.duration_min is not None else 0.5
+        s_score = norm(o.stops, s_min, s_max)
+        total = (
+            weight_price * p_score
+            + weight_duration * duration_dampen * d_score
+            + weight_stops * s_score
+        )
+        if len(o.sources) > 1:
+            total -= 0.03  # small confidence bonus for cross-source agreement
+        return total
+
+    return sorted(valid, key=score)[:n]
+
+
+# ==============================================================================
+# Output
+# ==============================================================================
+
+
+def _fmt_dt(dt: Optional[datetime]) -> str:
+    return dt.strftime("%m/%d %H:%M") if dt else "?"
+
+
+def _fmt_price(o: FlightOption) -> str:
+    parts = []
+    for src in ("fli", "fast_flights"):
+        if src in o.price:
+            parts.append(f"{src}={o.price[src]:.0f}{o.currency.get(src, '')}")
+    spread = o.price_spread_pct()
+    flag = f"  ⚠ {spread:.1f}% diff" if spread and spread > 5 else ""
+    return " / ".join(parts) + flag
+
+
+def print_table(options: list[FlightOption]) -> None:
+    if not options:
+        print("No results.")
+        return
+    print(f"{'#':<3}{'Airline':<20}{'Flight#':<14}{'Depart':<12}{'Arrive':<12}{'Dur':<7}{'Stops':<6}{'Price':<38}{'Src'}")
+    print("-" * 120)
+    for i, o in enumerate(options, 1):
+        dur = f"{o.duration_min}m" if o.duration_min else "?"
+        fn = ",".join(o.flight_numbers) if o.flight_numbers else "-"
+        print(
+            f"{i:<3}{o.airline_name[:19]:<20}{fn[:13]:<14}{_fmt_dt(o.depart):<12}"
+            f"{_fmt_dt(o.arrive):<12}{dur:<7}{o.stops:<6}{_fmt_price(o):<38} {'+'.join(o.sources)}"
+        )
+
+
+def write_csv(options: list[FlightOption], path: str) -> None:
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        w = csv_module.writer(f)
+        w.writerow(["airline", "flight_numbers", "depart", "arrive", "duration_min",
+                    "stops", "price_fli", "price_fast_flights", "spread_pct", "sources", "route"])
+        for o in options:
+            w.writerow([
+                o.airline_name,
+                ";".join(o.flight_numbers),
+                o.depart.isoformat() if o.depart else "",
+                o.arrive.isoformat() if o.arrive else "",
+                o.duration_min or "",
+                o.stops,
+                o.price.get("fli", ""),
+                o.price.get("fast_flights", ""),
+                f"{o.price_spread_pct():.1f}" if o.price_spread_pct() else "",
+                "+".join(o.sources),
+                o.route_desc,
+            ])
+    print(f"\nSaved {len(options)} rows to {path}")
+
+
+# ==============================================================================
+# CLI
+# ==============================================================================
+
+
+def run(args: argparse.Namespace) -> None:
+    airlines = [a.strip() for a in args.airlines.split(",")] if args.airlines else None
+    max_stops_num = {"any": None, "nonstop": 0, "1": 1, "2": 2}.get(args.max_stops)
+
+    print(f"Searching {args.origin} -> {args.destination} on {args.date}"
+          + (f" (return {args.return_date})" if args.return_date else "")
+          + " via two independent sources...\n")
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as ex:
+        fut_fli = ex.submit(
+            search_fli, args.origin, args.destination, args.date, args.return_date,
+            airlines, args.max_stops, args.seat, args.currency,
+        )
+        fut_ff = ex.submit(
+            search_fast_flights, args.origin, args.destination, args.date, args.return_date,
+            airlines, max_stops_num, args.seat, args.currency,
+        )
+
+        fli_results: list[FlightOption] = []
+        ff_results: list[FlightOption] = []
+        try:
+            fli_results = fut_fli.result()
+        except Exception as e:
+            print(f"[fli source failed]: {e}", file=sys.stderr)
+        try:
+            ff_results = fut_ff.result()
+        except Exception as e:
+            print(f"[fast_flights source failed]: {e}", file=sys.stderr)
+
+    if not fli_results and not ff_results:
+        print("Both sources failed or returned nothing. See stderr above.")
+        return
+
+    print(f"fli: {len(fli_results)} results | fast_flights: {len(ff_results)} results\n")
+
+    merged = cross_reference(fli_results, ff_results)
+
+    if args.flight_number:
+        merged = filter_by_flight_number(merged, args.flight_number)
+
+    top = rank_top_n(merged, n=args.top)
+    print(f"Top {len(top)} combinations:\n")
+    print_table(top)
+
+    if args.csv:
+        write_csv(merged, args.csv)
+
+
+def build_arg_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(description="Cross-reference flts + flyGPT flight search engines.")
+    p.add_argument("--from", dest="origin", help="Origin IATA code, e.g. TPE")
+    p.add_argument("--to", dest="destination", help="Destination IATA code, e.g. ICN")
+    p.add_argument("--date", help="Outbound date YYYY-MM-DD")
+    p.add_argument("--return-date", default=None, help="Return date YYYY-MM-DD (omit for one-way)")
+    p.add_argument("--airlines", default=None, help="Comma-separated IATA airline codes, e.g. CI,BR")
+    p.add_argument("--flight-number", default=None, help="Filter to one specific flight number (fli side only)")
+    p.add_argument("--max-stops", default="any", choices=["any", "nonstop", "1", "2"])
+    p.add_argument("--seat", default="economy",
+                    choices=["economy", "premium_economy", "business", "first"])
+    p.add_argument("--currency", default="TWD")
+    p.add_argument("--top", type=int, default=5)
+    p.add_argument("--csv", default=None, help="Optional path to also write full results as CSV")
+    p.add_argument("--self-test", action="store_true", help="Run an offline check of the merge/ranking logic")
+    return p
+
+
+# ==============================================================================
+# Offline self-test (no network needed) -- proves the merge + ranking logic
+# works correctly, since live Google Flights calls can't be made from every
+# environment (e.g. sandboxes without network egress to Google).
+# ==============================================================================
+
+
+def _self_test() -> None:
+    a = FlightOption(
+        sources=["fli"], airline_name="China Airlines", airline_code="CI",
+        flight_numbers=["CI160"], depart=datetime(2026, 9, 15, 8, 30),
+        arrive=datetime(2026, 9, 15, 11, 10), duration_min=160, stops=0,
+        price={"fli": 5200.0}, currency={"fli": "TWD"}, route_desc="TPE -> ICN",
+    )
+    b = FlightOption(
+        sources=["fast_flights"], airline_name="China Airlines", airline_code="",
+        flight_numbers=[], depart=datetime(2026, 9, 15, 8, 35),
+        arrive=datetime(2026, 9, 15, 11, 15), duration_min=160, stops=0,
+        price={"fast_flights": 5350.0}, currency={"fast_flights": "TWD"}, route_desc="TPE -> ICN",
+    )
+    c = FlightOption(
+        sources=["fli"], airline_name="EVA Air", airline_code="BR",
+        flight_numbers=["BR169"], depart=datetime(2026, 9, 15, 9, 15),
+        arrive=datetime(2026, 9, 15, 11, 55), duration_min=160, stops=0,
+        price={"fli": 6100.0}, currency={"fli": "TWD"}, route_desc="TPE -> ICN",
+    )
+    d = FlightOption(
+        sources=["fast_flights"], airline_name="Jeju Air", airline_code="",
+        flight_numbers=[], depart=datetime(2026, 9, 15, 14, 0),
+        arrive=datetime(2026, 9, 15, 16, 50), duration_min=170, stops=0,
+        price={"fast_flights": 4800.0}, currency={"fast_flights": "TWD"}, route_desc="TPE -> ICN",
+    )
+
+    merged = cross_reference([a, c], [b, d])
+    assert len(merged) == 3, f"expected 3 merged rows (a+b combined, c, d), got {len(merged)}"
+
+    matched = [o for o in merged if len(o.sources) == 2]
+    assert len(matched) == 1, "expected exactly one cross-source match (China Airlines)"
+    assert matched[0].price_spread_pct() is not None and matched[0].price_spread_pct() < 5, \
+        "China Airlines price spread should be small"
+
+    top = rank_top_n(merged, n=5)
+    assert top[0].airline_name == "Jeju Air", f"expected cheapest (Jeju Air) ranked first, got {top[0].airline_name}"
+
+    print("Self-test passed: merge, cross-source matching, and ranking all behave as expected.\n")
+    print_table(top)
+
+
+def main() -> None:
+    parser = build_arg_parser()
+    args = parser.parse_args()
+
+    if args.self_test:
+        _self_test()
+        return
+
+    if not (args.origin and args.destination and args.date):
+        parser.error("--from, --to, and --date are required (or pass --self-test)")
+
+    run(args)
+
+
+if __name__ == "__main__":
+    main()
