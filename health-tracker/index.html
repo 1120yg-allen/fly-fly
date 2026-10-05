@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0f766e">
+  <title>健康紀錄</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>健康紀錄</h1>
+    <button id="btn-settings" class="icon-btn" aria-label="設定">⚙︎</button>
+  </header>
+
+  <main>
+    <!-- 今日總覽 -->
+    <section id="view-home" class="view active">
+      <h2 class="section-title">最新數據</h2>
+      <div id="summary" class="summary-grid"></div>
+
+      <h2 class="section-title">趨勢</h2>
+      <div class="chart-controls">
+        <select id="chart-metric" aria-label="指標"></select>
+        <select id="chart-range" aria-label="期間">
+          <option value="7">近 7 天</option>
+          <option value="30" selected>近 30 天</option>
+          <option value="90">近 90 天</option>
+          <option value="365">近一年</option>
+        </select>
+      </div>
+      <div class="card chart-card">
+        <canvas id="chart" height="220"></canvas>
+        <p id="chart-empty" class="muted hidden">此期間沒有資料</p>
+        <p id="chart-stats" class="muted small"></p>
+      </div>
+    </section>
+
+    <!-- 新增紀錄 -->
+    <section id="view-add" class="view">
+      <h2 class="section-title" id="form-title">新增紀錄</h2>
+      <form id="entry-form" class="card form">
+        <label>類型
+          <select id="f-type" required></select>
+        </label>
+        <label>日期時間
+          <input type="datetime-local" id="f-time" required>
+        </label>
+        <div id="f-fields"></div>
+        <label>備註
+          <textarea id="f-note" rows="2" placeholder="例如：飯後、運動後、感冒中…"></textarea>
+        </label>
+        <div class="form-actions">
+          <button type="button" id="btn-cancel-edit" class="btn ghost hidden">取消編輯</button>
+          <button type="submit" class="btn primary">儲存</button>
+        </div>
+        <p id="form-hint" class="hint"></p>
+      </form>
+    </section>
+
+    <!-- 歷史 -->
+    <section id="view-history" class="view">
+      <h2 class="section-title">歷史紀錄</h2>
+      <div class="chart-controls">
+        <select id="h-filter" aria-label="篩選類型"><option value="">全部類型</option></select>
+      </div>
+      <ul id="history" class="history"></ul>
+      <p id="history-empty" class="muted hidden">還沒有任何紀錄，先去「新增」吧！</p>
+    </section>
+
+    <!-- 設定 -->
+    <section id="view-settings" class="view">
+      <h2 class="section-title">個人資料</h2>
+      <form id="profile-form" class="card form">
+        <label>身高 (cm)
+          <input type="number" id="p-height" min="50" max="250" step="0.1" inputmode="decimal">
+        </label>
+        <label>目標體重 (kg)
+          <input type="number" id="p-goal" min="20" max="300" step="0.1" inputmode="decimal">
+        </label>
+        <label>每日飲水目標 (ml)
+          <input type="number" id="p-water" min="0" max="10000" step="50" inputmode="numeric">
+        </label>
+        <button type="submit" class="btn primary">儲存</button>
+      </form>
+
+      <h2 class="section-title">資料備份</h2>
+      <div class="card form">
+        <p class="muted small">資料只儲存在這台裝置的瀏覽器中。建議定期匯出備份。</p>
+        <div class="form-actions wrap">
+          <button id="btn-export-json" class="btn">匯出 JSON</button>
+          <button id="btn-export-csv" class="btn">匯出 CSV</button>
+          <label class="btn file-btn">匯入 JSON
+            <input type="file" id="import-file" accept="application/json,.json" hidden>
+          </label>
+          <button id="btn-clear" class="btn danger">清除全部資料</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <nav class="tabbar">
+    <button data-view="home" class="active"><span>📊</span>總覽</button>
+    <button data-view="add"><span>＋</span>新增</button>
+    <button data-view="history"><span>📋</span>歷史</button>
+  </nav>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
