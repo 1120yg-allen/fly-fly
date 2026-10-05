@@ -1,6 +1,6 @@
 // 離線快取：先回應快取，同時在背景更新
-const CACHE = 'health-tracker-v2';
-const ASSETS = ['./', 'index.html', 'styles.css', 'store.js', 'sync.js', 'meds.js', 'app.js', 'manifest.json', 'icon.svg'];
+const CACHE = 'health-tracker-v3';
+const ASSETS = ['./', 'index.html', 'styles.css', 'store.js', 'sync.js', 'meds.js', 'lab-catalog.js', 'labs.js', 'ocr.js', 'app.js', 'manifest.json', 'icon.svg'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));

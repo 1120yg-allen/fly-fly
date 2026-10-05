@@ -27,6 +27,8 @@
         <div class="card"><ul id="home-dose-list" class="dose-list"></ul></div>
       </div>
 
+      <button id="home-lab" class="card lab-home hidden" type="button"></button>
+
       <h2 class="section-title">最新數據</h2>
       <div id="summary" class="summary-grid"></div>
 
@@ -122,6 +124,65 @@
       </form>
     </section>
 
+    <!-- 檢驗 -->
+    <section id="view-labs" class="view">
+      <div class="card lab-capture">
+        <div>
+          <h2 class="lab-capture-title">檢驗報告</h2>
+          <p class="muted small">拍下健檢或抽血報告，自動帶入數值。照片只在這台裝置上辨識，不會上傳。</p>
+        </div>
+        <div class="form-actions wrap">
+          <label class="btn primary file-btn" for="lab-camera">拍照辨識</label>
+          <input type="file" id="lab-camera" accept="image/*" capture="environment" hidden>
+          <label class="btn file-btn" for="lab-photo">選擇照片</label>
+          <input type="file" id="lab-photo" accept="image/*" multiple hidden>
+          <button type="button" id="btn-lab-manual" class="btn">手動輸入</button>
+        </div>
+        <div id="ocr-progress" class="ocr-progress" hidden>
+          <div class="ocr-bar"><span id="ocr-bar-fill"></span></div>
+          <p id="ocr-text" class="muted small"></p>
+        </div>
+      </div>
+
+      <div class="lab-tools">
+        <input type="search" id="lab-search" placeholder="搜尋項目，例如 WBC、血糖、肝功能" aria-label="搜尋檢驗項目">
+        <label class="check small"><input type="checkbox" id="lab-show-all"> 顯示全部項目與參考值</label>
+      </div>
+      <div id="lab-summary" class="lab-summary"></div>
+      <p id="lab-empty" class="muted small hidden">還沒有檢驗紀錄。拍下報告或手動輸入後，這裡會依類別顯示最新結果。</p>
+
+      <h2 class="section-title">報告紀錄</h2>
+      <ul id="lab-reports" class="history"></ul>
+    </section>
+
+    <!-- 檢驗報告：確認 / 編輯 -->
+    <section id="view-lab-edit" class="view">
+      <h2 class="section-title" id="lab-edit-title">確認檢驗結果</h2>
+      <div id="lab-ocr-summary" class="card banner hidden"></div>
+      <form id="lab-form" class="form lab-form">
+        <div class="card form">
+          <div class="row">
+            <label>檢驗日期
+              <input type="date" id="lab-date" required>
+            </label>
+            <label>醫院 / 備註
+              <input type="text" id="lab-note" maxlength="60" placeholder="例如：台大醫院健檢">
+            </label>
+          </div>
+          <input type="search" id="lab-edit-search" placeholder="搜尋要輸入的項目" aria-label="搜尋要輸入的項目">
+        </div>
+        <div id="lab-edit-groups" class="lab-summary"></div>
+        <details id="lab-raw" class="card raw-text hidden">
+          <summary>辨識出的原始文字</summary>
+          <pre id="lab-raw-text"></pre>
+        </details>
+        <div class="sticky-actions">
+          <button type="button" id="btn-lab-cancel" class="btn ghost">取消</button>
+          <button type="submit" class="btn primary">儲存報告</button>
+        </div>
+      </form>
+    </section>
+
     <!-- 歷史 -->
     <section id="view-history" class="view">
       <h2 class="section-title">歷史紀錄</h2>
@@ -149,6 +210,13 @@
           <div class="field-label">頭像</div>
           <div id="p-avatars" class="avatars"></div>
         </div>
+        <label>生理性別（用於判讀檢驗參考值）
+          <select id="p-sex">
+            <option value="">未設定</option>
+            <option value="M">男</option>
+            <option value="F">女</option>
+          </select>
+        </label>
         <div class="row">
           <label>身高 (cm)
             <input type="number" id="p-height" min="30" max="250" step="0.1" inputmode="decimal">
@@ -221,14 +289,29 @@
     <button data-view="home" class="active"><span>📊</span>總覽</button>
     <button data-view="add"><span>＋</span>新增</button>
     <button data-view="meds"><span>💊</span>服藥</button>
+    <button data-view="labs"><span>🧪</span>檢驗</button>
     <button data-view="history"><span>📋</span>歷史</button>
   </nav>
+
+  <dialog id="info-sheet" class="sheet" aria-labelledby="sheet-title">
+    <div class="sheet-head">
+      <div>
+        <p id="sheet-eyebrow" class="sheet-eyebrow"></p>
+        <h3 id="sheet-title"></h3>
+      </div>
+      <button type="button" class="icon-btn sheet-close" id="sheet-close" aria-label="關閉">✕</button>
+    </div>
+    <div id="sheet-body" class="sheet-body"></div>
+  </dialog>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
   <script src="store.js"></script>
   <script src="sync.js"></script>
   <script src="meds.js"></script>
+  <script src="lab-catalog.js"></script>
+  <script src="labs.js"></script>
+  <script src="ocr.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
