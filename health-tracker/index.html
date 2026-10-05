@@ -12,13 +12,21 @@
 </head>
 <body>
   <header class="topbar">
-    <h1>健康紀錄</h1>
-    <button id="btn-settings" class="icon-btn" aria-label="設定">⚙︎</button>
+    <select id="profile-switch" class="profile-switch" aria-label="切換成員"></select>
+    <div class="topbar-actions">
+      <button id="btn-sync" class="icon-btn sync-indicator hidden" aria-label="同步狀態" title="同步狀態">☁︎</button>
+      <button id="btn-settings" class="icon-btn" aria-label="設定">⚙︎</button>
+    </div>
   </header>
 
   <main>
-    <!-- 今日總覽 -->
+    <!-- 總覽 -->
     <section id="view-home" class="view active">
+      <div id="home-meds" class="hidden">
+        <h2 class="section-title">今日服藥</h2>
+        <div class="card"><ul id="home-dose-list" class="dose-list"></ul></div>
+      </div>
+
       <h2 class="section-title">最新數據</h2>
       <div id="summary" class="summary-grid"></div>
 
@@ -61,6 +69,59 @@
       </form>
     </section>
 
+    <!-- 服藥 -->
+    <section id="view-meds" class="view">
+      <div id="notify-banner" class="card banner hidden">
+        <p id="notify-text" class="small"></p>
+        <div class="form-actions wrap">
+          <button id="btn-notify" class="btn primary">開啟通知</button>
+          <button id="btn-ics" class="btn">匯出到行事曆</button>
+        </div>
+      </div>
+
+      <h2 class="section-title">今日服藥 <span id="meds-date" class="muted small"></span></h2>
+      <div class="card"><ul id="dose-list" class="dose-list"></ul>
+        <p id="dose-empty" class="muted small hidden">今天沒有需要服用的藥物</p>
+      </div>
+
+      <h2 class="section-title">藥物清單</h2>
+      <ul id="med-list" class="history"></ul>
+      <p id="med-empty" class="muted small hidden">還沒有設定任何藥物</p>
+      <div class="form-actions wrap">
+        <button id="btn-add-med" class="btn primary">＋ 新增藥物</button>
+      </div>
+
+      <form id="med-form" class="card form hidden">
+        <h3 id="med-form-title" class="form-heading">新增藥物</h3>
+        <label>藥名
+          <input type="text" id="m-name" required maxlength="60" placeholder="例如：降血壓藥、維他命 D">
+        </label>
+        <label>劑量
+          <input type="text" id="m-dose" maxlength="40" placeholder="例如：1 顆、5 ml">
+        </label>
+        <div>
+          <div class="field-label">服用時間</div>
+          <div id="m-times" class="times"></div>
+          <button type="button" id="btn-add-time" class="btn small-btn">＋ 新增時間</button>
+        </div>
+        <div>
+          <div class="field-label">服用日</div>
+          <div id="m-days" class="days"></div>
+        </div>
+        <label>開始日期
+          <input type="date" id="m-start">
+        </label>
+        <label>備註
+          <input type="text" id="m-note" maxlength="100" placeholder="例如：飯後、睡前、搭配開水">
+        </label>
+        <label class="check"><input type="checkbox" id="m-active" checked> 啟用提醒</label>
+        <div class="form-actions">
+          <button type="button" id="btn-cancel-med" class="btn ghost">取消</button>
+          <button type="submit" class="btn primary">儲存</button>
+        </div>
+      </form>
+    </section>
+
     <!-- 歷史 -->
     <section id="view-history" class="view">
       <h2 class="section-title">歷史紀錄</h2>
@@ -73,23 +134,76 @@
 
     <!-- 設定 -->
     <section id="view-settings" class="view">
-      <h2 class="section-title">個人資料</h2>
-      <form id="profile-form" class="card form">
-        <label>身高 (cm)
-          <input type="number" id="p-height" min="50" max="250" step="0.1" inputmode="decimal">
+      <h2 class="section-title">家庭成員</h2>
+      <ul id="profile-list" class="history"></ul>
+      <div class="form-actions wrap">
+        <button id="btn-add-profile" class="btn">＋ 新增成員</button>
+      </div>
+
+      <form id="profile-form" class="card form hidden">
+        <h3 id="profile-form-title" class="form-heading">編輯成員</h3>
+        <label>名稱
+          <input type="text" id="p-name" required maxlength="20" placeholder="例如：媽媽、小明">
         </label>
-        <label>目標體重 (kg)
-          <input type="number" id="p-goal" min="20" max="300" step="0.1" inputmode="decimal">
-        </label>
+        <div>
+          <div class="field-label">頭像</div>
+          <div id="p-avatars" class="avatars"></div>
+        </div>
+        <div class="row">
+          <label>身高 (cm)
+            <input type="number" id="p-height" min="30" max="250" step="0.1" inputmode="decimal">
+          </label>
+          <label>目標體重 (kg)
+            <input type="number" id="p-goal" min="2" max="300" step="0.1" inputmode="decimal">
+          </label>
+        </div>
         <label>每日飲水目標 (ml)
-          <input type="number" id="p-water" min="0" max="10000" step="50" inputmode="numeric">
+          <input type="number" id="p-water" min="0" max="10000" step="1" inputmode="numeric">
         </label>
-        <button type="submit" class="btn primary">儲存</button>
+        <div class="form-actions">
+          <button type="button" id="btn-cancel-profile" class="btn ghost">取消</button>
+          <button type="submit" class="btn primary">儲存</button>
+        </div>
       </form>
+
+      <h2 class="section-title">資料儲存方式</h2>
+      <div class="card form">
+        <label class="check"><input type="radio" name="storage-mode" value="local"> 只存在這台裝置（預設）</label>
+        <label class="check"><input type="radio" name="storage-mode" value="cloud"> 雲端同步（端對端加密，可在多台裝置使用）</label>
+
+        <form id="sync-form" class="form hidden">
+          <p class="muted small">資料在裝置上加密後才上傳，伺服器看不到內容。需要先架設同步伺服器（見 README）。
+            在每台裝置輸入<strong>相同的帳號與密碼</strong>即可共用資料。忘記密碼將無法取回雲端資料。</p>
+          <label>同步伺服器網址
+            <input type="url" id="s-server" required placeholder="https://example.com">
+          </label>
+          <label>同步帳號
+            <input type="text" id="s-account" required maxlength="100" autocomplete="username" placeholder="自訂，例如家庭名稱">
+          </label>
+          <label>同步密碼（至少 8 個字元）
+            <input type="password" id="s-password" required minlength="8" autocomplete="current-password">
+          </label>
+          <div class="form-actions">
+            <button type="submit" class="btn primary" id="btn-connect">連線並同步</button>
+          </div>
+        </form>
+
+        <div id="sync-connected" class="hidden">
+          <p class="small">帳號：<strong id="s-account-label"></strong><br>
+            伺服器：<span id="s-server-label" class="muted"></span><br>
+            狀態：<span id="s-status"></span></p>
+          <div class="form-actions wrap">
+            <button id="btn-sync-now" class="btn primary">立即同步</button>
+            <button id="btn-sync-off" class="btn">停止同步</button>
+          </div>
+          <p class="muted small">停止同步後，資料仍會保留在這台裝置上。</p>
+        </div>
+        <p id="sync-error" class="hint warn"></p>
+      </div>
 
       <h2 class="section-title">資料備份</h2>
       <div class="card form">
-        <p class="muted small">資料只儲存在這台裝置的瀏覽器中。建議定期匯出備份。</p>
+        <p class="muted small">建議定期匯出備份。JSON 包含所有成員與服藥資料，可再匯入。</p>
         <div class="form-actions wrap">
           <button id="btn-export-json" class="btn">匯出 JSON</button>
           <button id="btn-export-csv" class="btn">匯出 CSV</button>
@@ -99,17 +213,22 @@
           <button id="btn-clear" class="btn danger">清除全部資料</button>
         </div>
       </div>
+      <p class="muted small disclaimer">本 App 的數值判讀僅供參考，不能取代醫師的診斷與建議。</p>
     </section>
   </main>
 
   <nav class="tabbar">
     <button data-view="home" class="active"><span>📊</span>總覽</button>
     <button data-view="add"><span>＋</span>新增</button>
+    <button data-view="meds"><span>💊</span>服藥</button>
     <button data-view="history"><span>📋</span>歷史</button>
   </nav>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
+  <script src="store.js"></script>
+  <script src="sync.js"></script>
+  <script src="meds.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
