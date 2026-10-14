@@ -291,3 +291,35 @@ textarea { resize: vertical; }
 .lab-home .icon { font-size: 1.5rem; }
 .check { display: flex; align-items: center; gap: 8px; cursor: pointer; }
 .check input { width: auto; margin: 0; }
+
+/* 健康建議 */
+.advice-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.advice-head .section-title { margin-bottom: 0; }
+.advice-head select { width: auto; background: var(--card); margin-top: 12px; }
+.advice-highlight { margin-top: 10px; display: grid; gap: 6px; }
+.advice-highlight p { margin: 0; }
+.advice-highlight .lead { font-weight: 600; }
+.advice-highlight ul { margin: 0; padding-left: 1.2em; display: grid; gap: 2px; }
+.compare { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: .92rem; }
+.compare th, .compare td { padding: 7px 4px; text-align: right; border-bottom: 1px solid var(--border); }
+.compare th:first-child, .compare td:first-child { text-align: left; color: var(--muted); font-weight: 400; }
+.compare thead th { font-size: .78rem; color: var(--muted); font-weight: 600; }
+.compare tr:last-child td { border-bottom: 0; }
+.compare .delta { font-size: .78rem; color: var(--muted); white-space: nowrap; }
+.compare .delta.better { color: var(--ok); }
+.compare .delta.worse { color: var(--warn); }
+.advice-filter { display: flex; flex-wrap: wrap; gap: 6px; margin: 18px 0 10px; }
+.advice-list { display: grid; gap: 10px; }
+.advice { padding: 0; overflow: hidden; }
+.advice > summary { list-style: none; cursor: pointer; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 4px 10px; align-items: center; padding: 12px 14px; }
+.advice > summary::-webkit-details-marker { display: none; }
+.advice .a-icon { font-size: 1.3rem; }
+.advice .a-title { font-weight: 600; min-width: 0; }
+.advice .a-area { font-size: .75rem; color: var(--muted); }
+.advice .a-detail { grid-column: 2 / -1; font-size: .85rem; color: var(--muted); }
+.advice .a-body { padding: 0 14px 14px 14px; display: grid; gap: 8px; }
+.advice .a-body ul { margin: 0; padding-left: 1.2em; display: grid; gap: 6px; line-height: 1.6; }
+.advice .a-src { font-size: .75rem; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 8px; }
+.advice .a-src .region { border: 1px solid var(--border); border-radius: 999px; padding: 0 6px; margin-right: 2px; }
+.advice-toggle { align-self: end; padding-bottom: 10px; }
+.field-note { margin: -4px 0 0; }

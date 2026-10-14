@@ -27,6 +27,7 @@
         <div class="card"><ul id="home-dose-list" class="dose-list"></ul></div>
       </div>
 
+      <button id="home-advice" class="card lab-home hidden" type="button"></button>
       <button id="home-lab" class="card lab-home hidden" type="button"></button>
 
       <h2 class="section-title">最新數據</h2>
@@ -183,6 +184,46 @@
       </form>
     </section>
 
+    <!-- 健康建議 -->
+    <section id="view-advice" class="view">
+      <div class="advice-head">
+        <h2 class="section-title">每月健康回顧</h2>
+        <select id="advice-month" aria-label="選擇月份"></select>
+      </div>
+      <div id="advice-highlight" class="card advice-highlight"></div>
+
+      <h2 class="section-title" id="advice-overview-title">本月概況</h2>
+      <div class="card">
+        <table class="compare" id="advice-compare"></table>
+        <p id="advice-compare-empty" class="muted small hidden">這個月還沒有健康紀錄。</p>
+        <p id="advice-coverage" class="muted small"></p>
+      </div>
+
+      <div class="advice-filter" role="tablist" aria-label="建議分類">
+        <button type="button" class="chip" data-area="" aria-pressed="true">全部</button>
+        <button type="button" class="chip" data-area="diet" aria-pressed="false">飲食</button>
+        <button type="button" class="chip" data-area="sleep" aria-pressed="false">睡眠</button>
+        <button type="button" class="chip" data-area="exercise" aria-pressed="false">運動</button>
+        <button type="button" class="chip" data-area="followup" aria-pressed="false">追蹤</button>
+      </div>
+      <div id="advice-list" class="advice-list"></div>
+
+      <h2 class="section-title">每月提醒</h2>
+      <div class="card form">
+        <div class="row">
+          <label>每月提醒日
+            <select id="advice-day"></select>
+          </label>
+          <label class="check advice-toggle"><input type="checkbox" id="advice-enabled"> 開啟提醒</label>
+        </div>
+        <p class="muted small">到了每月的提醒日，打開 App 時會產生上個月與本月的回顧並提醒你查看。App 關閉時無法跳通知，建議匯出到手機行事曆。</p>
+        <div class="form-actions wrap">
+          <button type="button" id="btn-advice-ics" class="btn">匯出到行事曆</button>
+        </div>
+      </div>
+      <p class="muted small disclaimer">建議依台灣國民健康署、台灣相關醫學會，以及美國飲食、身體活動、睡眠等公開指引，根據你的紀錄自動整理，屬一般性衛教資訊，不能取代醫師或營養師的個別建議。已在治療中的疾病，請依醫囑調整。</p>
+    </section>
+
     <!-- 歷史 -->
     <section id="view-history" class="view">
       <h2 class="section-title">歷史紀錄</h2>
@@ -210,13 +251,19 @@
           <div class="field-label">頭像</div>
           <div id="p-avatars" class="avatars"></div>
         </div>
-        <label>生理性別（用於判讀檢驗參考值）
-          <select id="p-sex">
-            <option value="">未設定</option>
-            <option value="M">男</option>
-            <option value="F">女</option>
-          </select>
-        </label>
+        <div class="row">
+          <label>生理性別
+            <select id="p-sex">
+              <option value="">未設定</option>
+              <option value="M">男</option>
+              <option value="F">女</option>
+            </select>
+          </label>
+          <label>出生年（西元）
+            <input type="number" id="p-birth" min="1900" max="2100" step="1" inputmode="numeric" placeholder="例如 1975">
+          </label>
+        </div>
+        <p class="muted small field-note">性別用於判讀檢驗參考值；出生年用於睡眠建議與適用的公費健檢、癌症篩檢提醒。</p>
         <div class="row">
           <label>身高 (cm)
             <input type="number" id="p-height" min="30" max="250" step="0.1" inputmode="decimal">
@@ -290,6 +337,7 @@
     <button data-view="add"><span>＋</span>新增</button>
     <button data-view="meds"><span>💊</span>服藥</button>
     <button data-view="labs"><span>🧪</span>檢驗</button>
+    <button data-view="advice"><span>💡</span>建議</button>
     <button data-view="history"><span>📋</span>歷史</button>
   </nav>
 
@@ -312,6 +360,7 @@
   <script src="lab-catalog.js"></script>
   <script src="labs.js"></script>
   <script src="ocr.js"></script>
+  <script src="advice.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

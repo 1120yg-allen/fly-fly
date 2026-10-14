@@ -233,6 +233,7 @@ function renderView() {
   if (currentView === 'home') renderHome();
   if (currentView === 'meds') renderMeds();
   if (currentView === 'labs') renderLabs();
+  if (currentView === 'advice') renderAdvice();
   if (currentView === 'history') renderHistory();
   if (currentView === 'settings') renderSettings();
 }
@@ -259,6 +260,7 @@ function switchProfile(id) {
 
 /* ---------- 總覽 ---------- */
 function renderHome() {
+  renderHomeAdvice();
   renderHomeLab();
   renderDoseList($('#home-dose-list'), { compact: true });
   $('#home-meds').classList.toggle('hidden', !doseSlots(dayKey(new Date()), local.currentProfileId).length);
@@ -1193,6 +1195,207 @@ function onInfoClick(ev) {
   if (catBtn) { ev.preventDefault(); showLabCategoryInfo(catBtn.dataset.cat); }
 }
 
+/* ---------- 健康建議（每月回顧） ---------- */
+let adviceArea = '';
+
+const monthKey = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
+const parseMonthKey = (k) => { const [y, m] = k.split('-').map(Number); return { y, m: m - 1 }; };
+
+function adviceSettings() {
+  local.advice = { day: 1, enabled: true, reviewed: {}, notified: {}, ...(local.advice || {}) };
+  return local.advice;
+}
+
+/** 某月月底時的最新檢驗結果 */
+function labLatestAsOf(end) {
+  const out = {};
+  for (const r of myLabReports()) {
+    if (new Date(r.time) >= end) continue;
+    for (const [key, value] of Object.entries(r.values)) {
+      if (LAB_ITEMS[key] && out[key] == null && value !== '' && value != null) out[key] = { value, time: r.time };
+    }
+  }
+  return out;
+}
+
+function monthAdherence(y, m) {
+  let due = 0, taken = 0;
+  const now = Date.now();
+  const end = new Date(y, m + 1, 1);
+  for (let d = new Date(y, m, 1); d < end && d.getTime() <= now; d.setDate(d.getDate() + 1)) {
+    for (const slot of doseSlots(dayKey(d), local.currentProfileId)) {
+      if (slotDate(slot.date, slot.time) > now) continue;
+      due++;
+      if (slot.log?.status === 'taken') taken++;
+    }
+  }
+  return { due, taken };
+}
+
+function adviceFor(key) {
+  const { y, m } = parseMonthKey(key);
+  const entries = myEntries();
+  const now = new Date();
+  const result = buildAdvice({
+    profile: currentProfile(), entries, labLatest: labLatestAsOf(new Date(y, m + 1, 1)),
+    adherence: monthAdherence(y, m), year: y, month: m, now,
+  });
+  const prev = monthStats(entries, m === 0 ? y - 1 : y, m === 0 ? 11 : m - 1, now);
+  return { ...result, prev, y, m };
+}
+
+function adviceMonths() {
+  const keys = new Set([monthKey(new Date())]);
+  for (const e of mine('entries')) keys.add(e.time.slice(0, 7));
+  return [...keys].filter((k) => /^\d{4}-\d\d$/.test(k) && k <= monthKey(new Date())).sort().reverse();
+}
+
+/** 首頁卡片：到了每月提醒日，提示查看上個月的回顧 */
+function pendingReviewMonth() {
+  const st = adviceSettings();
+  const now = new Date();
+  const cur = monthKey(now);
+  if (!st.enabled || now.getDate() < st.day || st.reviewed[local.currentProfileId] === cur) return null;
+  const prevKey = monthKey(new Date(now.getFullYear(), now.getMonth() - 1, 1));
+  return mine('entries').some((e) => e.time.startsWith(prevKey)) ? prevKey : cur;
+}
+
+function renderHomeAdvice() {
+  const card = $('#home-advice');
+  const key = pendingReviewMonth();
+  card.classList.toggle('hidden', !key);
+  if (!key) return;
+  const a = adviceFor(key);
+  const warn = a.findings.filter((f) => f.level === 'warn');
+  card.dataset.month = key;
+  card.innerHTML = `
+    <div class="icon">📅</div>
+    <div class="body">
+      <div class="title">${a.y} 年 ${a.m + 1} 月健康回顧已整理好</div>
+      <div class="meta">${warn.length ? `${warn.length} 項需要注意：${escapeHTML(warn.slice(0, 2).map((f) => f.title.split('：')[0]).join('、'))}${warn.length > 2 ? '…' : ''}` : '查看本月的飲食、睡眠、運動建議'}</div>
+    </div>
+    <div class="chev">›</div>`;
+}
+
+function markReviewed() {
+  const st = adviceSettings();
+  const now = new Date();
+  if (now.getDate() >= st.day) {
+    st.reviewed[local.currentProfileId] = monthKey(now);
+    persistLocal();
+  }
+}
+
+function renderAdvice() {
+  const sel = $('#advice-month');
+  const months = adviceMonths();
+  const prevValue = sel.value;
+  const curKey = monthKey(new Date());
+  sel.innerHTML = months.map((k) => {
+    const { y, m } = parseMonthKey(k);
+    return `<option value="${k}">${y} 年 ${m + 1} 月${k === curKey ? '（本月）' : ''}</option>`;
+  }).join('');
+  sel.value = months.includes(prevValue) ? prevValue : months[0];
+
+  const a = adviceFor(sel.value);
+  const s = a.stats;
+  const warn = a.findings.filter((f) => f.level === 'warn');
+  const label = `${a.m + 1} 月`;
+  const prevLabel = `${a.m === 0 ? 12 : a.m} 月`;
+
+  const isCurrent = sel.value === curKey;
+  $('#advice-overview-title').textContent = `${isCurrent ? '本月' : label}概況`;
+  const noData = s.recordedDays === 0 && !Object.keys(labLatestAsOf(new Date(a.y, a.m + 1, 1))).length;
+  $('#advice-highlight').innerHTML = noData
+    ? `<p class="lead">${label}還沒有紀錄</p><p class="muted small">記錄體重、血壓、睡眠、運動，或在「檢驗」拍下報告後，這裡會依你的資料整理建議。下方先提供一般建議。</p>`
+    : warn.length
+    ? `<p class="lead">${label}有 ${warn.length} 項需要注意</p><ul>${warn.slice(0, 4).map((f) => `<li>${escapeHTML(f.title)}</li>`).join('')}</ul>
+       <p class="muted small">點下方的建議可以看到具體做法與依據的指引。</p>`
+    : `<p class="lead">${label}沒有需要特別注意的項目</p><p class="muted small">繼續保持，下方有維持健康的一般建議。</p>`;
+
+  const rows = monthCompareRows(s, a.prev);
+  $('#advice-compare-empty').classList.toggle('hidden', rows.length > 0);
+  $('#advice-compare').innerHTML = rows.length ? `
+    <thead><tr><th>項目</th><th>${label}</th><th>${prevLabel}</th></tr></thead>
+    <tbody>${rows.map((r) => {
+      const show = (v) => (v == null ? '—' : `${r.fmt(v)} <span class="muted small">${r.unit}</span>`);
+      let delta = '';
+      if (r.cur != null && r.prev != null) {
+        const c = Array.isArray(r.cur) ? r.cur[0] : r.cur, p = Array.isArray(r.prev) ? r.prev[0] : r.prev;
+        const diff = c - p;
+        if (Math.abs(diff) >= Math.abs(p) * 0.02 && Math.abs(diff) > 0.05) {
+          const cls = r.betterLow == null ? '' : (diff < 0) === r.betterLow ? ' better' : ' worse';
+          delta = ` <span class="delta${cls}">${diff > 0 ? '▲' : '▼'}</span>`;
+        }
+      }
+      return `<tr><td>${r.label}</td><td>${show(r.cur)}${delta}</td><td>${show(r.prev)}</td></tr>`;
+    }).join('')}</tbody>` : '';
+  const labDates = Object.values(labLatestAsOf(new Date(a.y, a.m + 1, 1))).map((v) => v.time).sort().reverse();
+  $('#advice-coverage').textContent = [
+    `${label}${s.days} 天中有 ${s.recordedDays} 天有紀錄`,
+    a.bmi ? `BMI ${Math.round(a.bmi * 10) / 10}` : '',
+    labDates.length ? `參考檢驗報告：${fmtDate(labDates[0])}` : '尚無檢驗報告',
+  ].filter(Boolean).join(' · ');
+
+  document.querySelectorAll('.advice-filter .chip').forEach((c) => c.setAttribute('aria-pressed', String(c.dataset.area === adviceArea)));
+  const list = $('#advice-list');
+  const items = a.findings.filter((f) => !adviceArea || f.area === adviceArea);
+  list.innerHTML = items.map((f) => `
+    <details class="card advice"${f.level === 'warn' ? ' open' : ''}>
+      <summary>
+        <span class="a-icon" aria-hidden="true">${AREA_ICON[f.area]}</span>
+        <span class="a-title">${escapeHTML(f.title)}</span>
+        ${f.level === 'warn' ? '<span class="badge warn">需注意</span>' : f.level === 'ok' ? '<span class="badge ok">良好</span>' : `<span class="a-area">${AREA_LABEL[f.area]}</span>`}
+        ${f.detail ? `<span class="a-detail">${escapeHTML(f.detail)}</span>` : ''}
+      </summary>
+      <div class="a-body">
+        <ul>${f.actions.map((t) => `<li>${escapeHTML(t)}</li>`).join('')}</ul>
+        ${f.sources.length ? `<div class="a-src">依據：${f.sources.map((k) => `<span><span class="region">${ADVICE_SOURCES[k].region}</span>${escapeHTML(ADVICE_SOURCES[k].name)}</span>`).join('')}</div>` : ''}
+      </div>
+    </details>`).join('') || '<p class="muted small">這個分類目前沒有建議。</p>';
+
+  const st = adviceSettings();
+  $('#advice-day').value = String(st.day);
+  $('#advice-enabled').checked = st.enabled;
+  markReviewed();
+}
+
+function exportAdviceICS() {
+  const st = adviceSettings();
+  const name = live('profiles').length > 1 ? currentProfile().name : '';
+  download(`每月健康回顧${name ? '-' + name : ''}.ics`, buildMonthlyICS(st.day, name), 'text/calendar');
+  toast('已匯出，用手機開啟檔案即可加入行事曆');
+}
+
+/** 每月提醒日：App 開著時跳一次通知（每位成員每月一次） */
+async function checkMonthlyReminder() {
+  const st = adviceSettings();
+  const now = new Date();
+  const cur = monthKey(now);
+  if (!st.enabled || now.getDate() < st.day) return;
+  for (const p of live('profiles')) {
+    if (st.notified[p.id] === cur || st.reviewed[p.id] === cur) continue;
+    st.notified[p.id] = cur;
+    persistLocal();
+    if (!notificationsSupported() || Notification.permission !== 'granted') continue;
+    const title = `📅 ${live('profiles').length > 1 ? p.name + '：' : ''}每月健康回顧`;
+    const options = { body: '查看上個月的飲食、睡眠、運動建議與追蹤提醒。', tag: `advice-${p.id}-${cur}`, icon: 'icon.svg', data: { view: 'advice', profileId: p.id } };
+    try {
+      const reg = 'serviceWorker' in navigator ? await navigator.serviceWorker.getRegistration() : null;
+      if (reg) await reg.showNotification(title, options); else new Notification(title, options);
+    } catch (e) { console.warn(e); }
+  }
+}
+
+function openAdvice(month, profileId) {
+  if (profileId && profileId !== local.currentProfileId && getById('profiles', profileId)) {
+    local.currentProfileId = profileId;
+    persistLocal();
+  }
+  showView('advice');
+  if (month) { $('#advice-month').value = month; renderAdvice(); }
+}
+
 /* ---------- 歷史 ---------- */
 function renderHistory() {
   const list = $('#history');
@@ -1284,7 +1487,7 @@ function renderProfiles() {
       <div class="icon">${escapeHTML(p.avatar || '🙂')}</div>
       <div class="body">
         <div class="main">${escapeHTML(p.name)}${p.id === local.currentProfileId ? '<span class="badge ok">目前</span>' : ''}</div>
-        <div class="meta">${[{ M: '男', F: '女' }[p.sex], p.height && `身高 ${p.height} cm`, p.goalWeight && `目標 ${p.goalWeight} kg`, `${count} 筆紀錄`, medCount && `${medCount} 種藥物`].filter(Boolean).join(' · ')}</div>
+        <div class="meta">${[{ M: '男', F: '女' }[p.sex], p.birthYear && `${new Date().getFullYear() - p.birthYear} 歲`, p.height && `身高 ${p.height} cm`, p.goalWeight && `目標 ${p.goalWeight} kg`, `${count} 筆紀錄`, medCount && `${medCount} 種藥物`].filter(Boolean).join(' · ')}</div>
       </div>
       <div class="actions">
         <button data-act="edit" aria-label="編輯">✏️</button>
@@ -1314,6 +1517,7 @@ function openProfileForm(p) {
   $('#p-goal').value = p?.goalWeight ?? '';
   $('#p-water').value = p ? (p.waterGoal ?? '') : DEFAULT_PROFILE.waterGoal;
   $('#p-sex').value = p?.sex || '';
+  $('#p-birth').value = p?.birthYear ?? '';
   pickedAvatar = p?.avatar || AVATARS[live('profiles').length % AVATARS.length];
   const wrap = $('#p-avatars');
   wrap.innerHTML = '';
@@ -1348,6 +1552,7 @@ function onSubmitProfile(ev) {
     name: $('#p-name').value.trim(), avatar: pickedAvatar,
     height: num('#p-height'), goalWeight: num('#p-goal'), waterGoal: num('#p-water'),
     sex: $('#p-sex').value || null,
+    birthYear: num('#p-birth'),
   });
   if (!rec) return;
   closeProfileForm();
@@ -1533,6 +1738,19 @@ function init() {
   $('#lab-form').addEventListener('submit', onSubmitLab);
   $('#btn-lab-cancel').addEventListener('click', () => { if (leaveLabEditor()) showView('labs'); });
   $('#home-lab').addEventListener('click', () => showView('labs'));
+  $('#home-advice').addEventListener('click', (e) => openAdvice(e.currentTarget.dataset.month));
+  $('#advice-month').addEventListener('change', renderAdvice);
+  document.querySelectorAll('.advice-filter .chip').forEach((c) => c.addEventListener('click', () => { adviceArea = c.dataset.area; renderAdvice(); }));
+  const daySel = $('#advice-day');
+  for (let d = 1; d <= 28; d++) daySel.add(new Option(`每月 ${d} 日`, String(d)));
+  daySel.addEventListener('change', () => { adviceSettings().day = Number(daySel.value); persistLocal(); toast(`已設定每月 ${daySel.value} 日提醒`); });
+  $('#advice-enabled').addEventListener('change', (e) => {
+    adviceSettings().enabled = e.target.checked;
+    persistLocal();
+    if (e.target.checked && notificationsSupported() && Notification.permission === 'default') requestNotificationPermission();
+    toast(e.target.checked ? '已開啟每月提醒' : '已關閉每月提醒');
+  });
+  $('#btn-advice-ics').addEventListener('click', exportAdviceICS);
   document.addEventListener('click', onInfoClick);
   $('#sheet-close').addEventListener('click', () => $('#info-sheet').close());
   $('#info-sheet').addEventListener('click', (e) => { if (e.target === e.currentTarget) e.currentTarget.close(); });
@@ -1616,7 +1834,7 @@ function init() {
 
   // 從通知點「已服用」開啟 App 時
   const params = new URLSearchParams(location.search);
-  const initialView = location.hash === '#meds' ? 'meds' : 'home';
+  const initialView = { '#meds': 'meds', '#advice': 'advice', '#labs': 'labs' }[location.hash] || 'home';
   showView(initialView);
   if (params.get('take')) {
     takeFromNotification(params.get('take'));
@@ -1628,15 +1846,18 @@ function init() {
     navigator.serviceWorker.addEventListener('message', (e) => {
       if (e.data?.type === 'take-dose') takeFromNotification(e.data.doseId);
       if (e.data?.type === 'open-meds') showView('meds');
+      if (e.data?.type === 'open-view' && e.data.view === 'advice') openAdvice(null, e.data.profileId);
     });
   }
 
   // 服藥提醒：每 30 秒檢查一次；回到 App 時立即檢查並同步
   checkReminders(onInAppReminder);
   setInterval(() => checkReminders(onInAppReminder), 30e3);
+  checkMonthlyReminder();
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState !== 'visible') return;
     checkReminders(onInAppReminder);
+    checkMonthlyReminder();
     if (currentView === 'home' || currentView === 'meds') renderView();
     Sync.schedule(0);
   });
