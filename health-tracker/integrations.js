@@ -451,6 +451,7 @@ function backupPayload() {
 /** 用系統分享選單備份：iPhone →「儲存到檔案」→ iCloud 雲端硬碟；Android →「雲端硬碟」 */
 async function shareBackup() {
   const name = `health-backup-${localDay(new Date())}.json`;
+  if (Native.enabled) return Native.shareFile(name, backupPayload());
   const file = new File([backupPayload()], name, { type: 'application/json' });
   if (navigator.canShare?.({ files: [file] })) {
     try {

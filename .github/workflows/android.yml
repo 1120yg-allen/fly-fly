@@ -1,0 +1,87 @@
+name: Android APK
+
+# 健康紀錄 App 有更新時，自動編譯 Android 安裝檔，並發佈到 Releases 的「android-latest」
+on:
+  push:
+    branches: [main, claude/health-info-tracking-app-w5cf5u]
+    paths:
+      - 'health-tracker/**'
+      - 'health-android/**'
+      - '.github/workflows/android.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: health-android
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: health-android/package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: 安裝套件並複製網頁
+        run: |
+          npm ci
+          npm run build
+          npx cap sync android
+
+      - name: 準備簽章金鑰（有設定 Secrets 時使用你的私人金鑰）
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+            echo "ANDROID_KEYSTORE_FILE=$RUNNER_TEMP/release.keystore" >> "$GITHUB_ENV"
+            echo "使用 Secrets 中的私人金鑰"
+          else
+            echo "未設定 ANDROID_KEYSTORE_BASE64，使用 repo 內的共用測試金鑰"
+          fi
+
+      - name: 編譯 APK
+        working-directory: health-android/android
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon --stacktrace
+
+      - name: 整理檔案
+        run: cp android/app/build/outputs/apk/release/app-release.apk "health-tracker-${{ github.run_number }}.apk"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: health-tracker-apk
+          path: health-android/health-tracker-*.apk
+
+      - name: 發佈到 Releases（手機可以直接下載）
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete android-latest --yes --cleanup-tag || true
+          gh release create android-latest health-tracker-*.apk \
+            --prerelease \
+            --target "$GITHUB_SHA" \
+            --title "健康紀錄 Android 版（第 ${{ github.run_number }} 版）" \
+            --notes "從 ${GITHUB_REF_NAME} 分支自動編譯（${GITHUB_SHA::7}）。用 Android 手機下載 .apk 檔並開啟即可安裝；已安裝舊版時會直接更新，資料會保留。安裝說明見 health-android/README.md。"

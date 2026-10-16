@@ -666,6 +666,16 @@ function renderNotifyBanner() {
   const hasMeds = mine('meds').length > 0;
   banner.classList.toggle('hidden', !hasMeds);
   if (!hasMeds) return;
+  if (Native.enabled) {
+    // 手機 App：系統通知會預先排程，App 關閉也會提醒
+    Native.permission(false).then((perm) => {
+      btn.classList.toggle('hidden', perm === 'granted');
+      text.textContent = perm === 'granted'
+        ? '🔔 已開啟系統通知：到了服藥時間會提醒，App 關閉或手機重新開機後也會提醒（可直接在通知上按「已服用」）。'
+        : '開啟通知後，到了服藥時間手機會提醒，App 關閉也會提醒。';
+    });
+    return;
+  }
   const perm = notificationsSupported() ? Notification.permission : 'unsupported';
   btn.classList.toggle('hidden', perm !== 'default');
   text.textContent = {
@@ -1286,6 +1296,7 @@ function markReviewed() {
   if (now.getDate() >= st.day) {
     st.reviewed[local.currentProfileId] = monthKey(now);
     persistLocal();
+    scheduleNativeReminders();
   }
 }
 
@@ -1372,6 +1383,7 @@ function exportAdviceICS() {
 
 /** 每月提醒日：App 開著時跳一次通知（每位成員每月一次） */
 async function checkMonthlyReminder() {
+  if (Native.enabled) return; // App 版由系統通知排程
   const st = adviceSettings();
   const now = new Date();
   const cur = monthKey(now);
@@ -1388,6 +1400,50 @@ async function checkMonthlyReminder() {
       if (reg) await reg.showNotification(title, options); else new Notification(title, options);
     } catch (e) { console.warn(e); }
   }
+}
+
+/* ---------- 手機 App：預先排程系統通知 ---------- */
+const NATIVE_HORIZON_DAYS = 14;
+
+function nativeReminderItems() {
+  const items = [];
+  const now = Date.now();
+  const multi = live('profiles').length > 1;
+  for (let i = 0; i < NATIVE_HORIZON_DAYS; i++) {
+    const d = new Date(); d.setDate(d.getDate() + i);
+    for (const s of doseSlots(dayKey(d))) {
+      const at = slotDate(s.date, s.time);
+      if (s.log || at <= now) continue;
+      const p = getById('profiles', s.med.profileId);
+      items.push({
+        key: `dose:${s.id}`, at, action: 'DOSE', extra: { doseId: s.id },
+        title: `💊 ${multi && p ? p.name + '：' : ''}該吃藥了`,
+        body: `${s.time} ${s.med.name}${s.med.dose ? '　' + s.med.dose : ''}`,
+      });
+    }
+  }
+  const st = adviceSettings();
+  if (st.enabled) {
+    for (const p of live('profiles')) {
+      const today = new Date();
+      let at = new Date(today.getFullYear(), today.getMonth(), st.day, 9, 0);
+      if (at <= today || st.reviewed[p.id] === monthKey(today)) at = new Date(today.getFullYear(), today.getMonth() + 1, st.day, 9, 0);
+      items.push({
+        key: `monthly:${p.id}:${monthKey(at)}`, at, extra: { view: 'advice', profileId: p.id },
+        title: `📅 ${multi ? p.name + '：' : ''}每月健康回顧`,
+        body: '查看上個月的飲食、睡眠、運動建議與追蹤提醒。',
+      });
+    }
+  }
+  // Android 對每個 App 的鬧鐘數量有限制，只排最近的 120 個
+  return items.sort((a, b) => a.at - b.at).slice(0, 120);
+}
+
+let nativeTimer = null;
+function scheduleNativeReminders(delay = 1500) {
+  if (!Native.enabled) return;
+  clearTimeout(nativeTimer);
+  nativeTimer = setTimeout(() => Native.schedule(nativeReminderItems()).catch((e) => console.warn('排程通知失敗', e)), delay);
 }
 
 function openAdvice(month, profileId) {
@@ -1628,6 +1684,10 @@ function renderSettings() {
 }
 
 function download(filename, content, mime) {
+  if (Native.enabled) {
+    // App 內無法直接下載檔案：改用系統分享選單（可存到雲端硬碟、檔案、LINE…）
+    return Native.shareFile(filename, content).catch((e) => toast(`無法分享檔案：${e.message || e}`));
+  }
   const blob = new Blob([content], { type: mime });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -1687,8 +1747,10 @@ function renderHomeBackup() {
 
 async function renderStorageStatus() {
   const total = COLLECTIONS.reduce((n, c) => n + live(c).length, 0);
-  $('#st-backend').textContent = storage.backend === 'indexedDB' ? '這台裝置（IndexedDB 資料庫）' : '這台裝置（localStorage，容量較小）';
-  const persisted = storage.persisted ?? await requestPersistentStorage(false);
+  $('#st-backend').textContent = Native.enabled ? '這支手機（App 內部資料庫）'
+    : storage.backend === 'indexedDB' ? '這台裝置（IndexedDB 資料庫）' : '這台裝置（localStorage，容量較小）';
+  // App 內的資料不會被瀏覽器清除，只有解除安裝或清除 App 資料時才會刪除
+  const persisted = Native.enabled ? true : storage.persisted ?? await requestPersistentStorage(false);
   const pEl = $('#st-persist');
   pEl.textContent = persisted === true ? '已受保護' : persisted === false ? '未受保護' : '此瀏覽器不支援';
   pEl.className = persisted === true ? 'ok' : persisted === false ? 'warn' : '';
@@ -1701,15 +1763,16 @@ async function renderStorageStatus() {
   bEl.className = d == null || d >= BACKUP_REMIND_DAYS ? 'warn' : 'ok';
   const tips = [];
   if (storage.error) tips.push(`⚠️ 最近一次儲存失敗（${storage.error}），請立即備份。`);
-  if (isIOS() && !isStandalone()) tips.push('iPhone／iPad：在 Safari 中，網站若 7 天沒有使用，資料可能被系統清除。請點「分享 → 加入主畫面」，從主畫面開啟 App 就不受此限制。');
+  if (Native.enabled) tips.push('資料存在 App 內，不會被自動清除；Android 的系統備份（設定 → Google → 備份）也會一併備份 App 資料。解除安裝 App 會刪除資料，請先備份。');
+  else if (isIOS() && !isStandalone()) tips.push('iPhone／iPad：在 Safari 中，網站若 7 天沒有使用，資料可能被系統清除。請點「分享 → 加入主畫面」，從主畫面開啟 App 就不受此限制。');
   else if (persisted === false) tips.push('瀏覽器空間不足時可能清除未受保護的網站資料。把 App 安裝到主畫面或桌面，並常常使用，瀏覽器較容易同意長期保存。');
   if (storage.backend !== 'indexedDB') tips.push('這個瀏覽器（或無痕模式）無法使用 IndexedDB，容量約 5 MB，請定期備份。');
-  tips.push('清除瀏覽器的網站資料會一併刪除紀錄，換手機前請先備份。');
+  if (!Native.enabled) tips.push('清除瀏覽器的網站資料會一併刪除紀錄，換手機前請先備份。');
   $('#st-tip').textContent = tips.join(' ');
 }
 
 async function backupNow() {
-  if (GDrive.clientId()) {
+  if (GDrive.clientId() && !Native.enabled) {
     try {
       const f = await GDrive.backup();
       local.gdrive = { ...(local.gdrive || {}), lastBackup: f.modifiedTime || new Date().toISOString() };
@@ -1858,6 +1921,8 @@ function applyHealthImport() {
 /* ---------- 雲端備份 ---------- */
 function renderCloudBackup() {
   $('#hi-profile').textContent = currentProfile().name;
+  // Google 不允許在 App 內嵌的網頁中登入，App 版改用分享選單存到雲端硬碟
+  document.querySelector('.gdrive').classList.toggle('hidden', Native.enabled);
   const g = local.gdrive || {};
   if (document.activeElement !== $('#gdrive-client')) $('#gdrive-client').value = g.clientId || '';
   const configured = !!GDrive.clientId();
@@ -1914,6 +1979,15 @@ function clearAll() {
 async function init() {
   await loadAll();
   onExternalChange = () => { renderView(); };
+  if (Native.enabled) {
+    document.documentElement.classList.add('native-app');
+    Native.init({
+      onTake: (id) => takeFromNotification(id),
+      onOpen: (view, profileId) => (view === 'advice' ? openAdvice(null, profileId) : showView(view)),
+    });
+    onDataChange(() => scheduleNativeReminders());
+    scheduleNativeReminders(800);
+  }
   // 已有資料時，請瀏覽器長期保存（Chrome、Edge、Safari 不會跳出詢問）
   if (live('entries').length) requestPersistentStorage(true);
 
@@ -1948,10 +2022,11 @@ async function init() {
   document.querySelectorAll('.advice-filter .chip').forEach((c) => c.addEventListener('click', () => { adviceArea = c.dataset.area; renderAdvice(); }));
   const daySel = $('#advice-day');
   for (let d = 1; d <= 28; d++) daySel.add(new Option(`每月 ${d} 日`, String(d)));
-  daySel.addEventListener('change', () => { adviceSettings().day = Number(daySel.value); persistLocal(); toast(`已設定每月 ${daySel.value} 日提醒`); });
+  daySel.addEventListener('change', () => { adviceSettings().day = Number(daySel.value); persistLocal(); scheduleNativeReminders(); toast(`已設定每月 ${daySel.value} 日提醒`); });
   $('#advice-enabled').addEventListener('change', (e) => {
     adviceSettings().enabled = e.target.checked;
     persistLocal();
+    scheduleNativeReminders();
     if (e.target.checked && notificationsSupported() && Notification.permission === 'default') requestNotificationPermission();
     toast(e.target.checked ? '已開啟每月提醒' : '已關閉每月提醒');
   });
@@ -1985,7 +2060,15 @@ async function init() {
   $('#btn-cancel-med').addEventListener('click', closeMedForm);
   $('#btn-add-time').addEventListener('click', () => addTimeInput('20:00'));
   $('#med-form').addEventListener('submit', onSubmitMed);
-  $('#btn-notify').addEventListener('click', () => requestNotificationPermission().then(renderNotifyBanner));
+  $('#btn-notify').addEventListener('click', async () => {
+    if (Native.enabled) {
+      const perm = await Native.permission(true);
+      if (perm === 'granted') scheduleNativeReminders(0);
+      else toast('請到手機「設定 → 應用程式 → 健康紀錄 → 通知」開啟');
+      return renderNotifyBanner();
+    }
+    requestNotificationPermission().then(renderNotifyBanner);
+  });
   $('#btn-ics').addEventListener('click', exportICS);
 
   // 成員
@@ -2074,7 +2157,7 @@ async function init() {
     history.replaceState(null, '', location.pathname + location.hash);
   }
 
-  if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+  if ('serviceWorker' in navigator && location.protocol !== 'file:' && !Native.enabled) {
     navigator.serviceWorker.register('sw.js').catch((e) => console.warn('SW 註冊失敗', e));
     navigator.serviceWorker.addEventListener('message', (e) => {
       if (e.data?.type === 'take-dose') takeFromNotification(e.data.doseId);
