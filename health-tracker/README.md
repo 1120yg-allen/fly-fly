@@ -51,6 +51,39 @@
 - 在「設定 → 家庭成員」填寫**性別與出生年**，建議會更準確（睡眠時數、篩檢資格）
 - 建議為依規則自動整理的一般性衛教，不能取代醫師或營養師的個別評估；公費篩檢資格以國健署最新公告為準
 
+### 🍎 匯入 Apple 與 Google 健康資料
+在「設定 → 匯入 Apple 與 Google 健康資料」選擇匯出檔，匯入到目前的成員（可選最近 3 個月、1 年、3 年或全部）：
+
+| 來源 | 怎麼匯出 | 可匯入的資料 |
+| --- | --- | --- |
+| **Apple「健康」** | iPhone「健康」App → 右上角頭像 → 匯出所有健康資料 → 儲存 `export.zip` | 步數、睡眠（只算睡著時間）、運動時間、靜止心率、體重、血壓、血糖、體溫、飲水 |
+| **Google（Fitbit）** | [Google Takeout](https://takeout.google.com/) 勾選「Fitbit」→ 下載 `.zip` | 步數、睡眠、活動分鐘（中等＋高強度）、靜止心率、體重 |
+| **Google Fit** | Google Takeout 勾選「Fit」→ 下載 `.zip` | 步數、Heart Minutes（作為運動時間）、體重、睡眠 |
+
+- 檔案在裝置上解析（大型 `export.zip` 也是逐段讀取），**不會上傳**
+- 同一天、同一種資料使用固定 id，**重複匯入只會更新、不會重複**
+- iPhone 與 Apple Watch 同時計步時，每天取較大的一方；Apple 與 Google 都有同一天的步數、睡眠、運動時，也只保留較大的一筆，避免加總
+- 單位自動換算：磅→公斤、mmol/L→mg/dL、°F→°C；Fitbit 體重單位可在匯入前確認
+- Android 的 Health Connect 目前沒有網頁可以讀取的匯出格式；若手錶或 App 會同步到 Fitbit，可以從 Fitbit 匯出
+
+### ☁️ 雲端備份（iCloud／Google 雲端硬碟）
+- **備份到 iCloud／雲端硬碟**：產生一個包含所有成員、紀錄、藥物與檢驗報告的備份檔，透過手機的分享選單存到 iCloud 雲端硬碟（iPhone：儲存到檔案）或 Google 雲端硬碟（Android）。不需要任何設定
+- **從備份檔還原**：從檔案選單打開 iCloud 雲端硬碟或 Google 雲端硬碟裡的備份檔，會與現有資料合併（較新的版本為準）
+- **Google 雲端硬碟一鍵備份／還原**：存在 Google 雲端硬碟的「應用程式專用資料夾」，只有這個 App 能讀寫，會使用你的 Google One 儲存空間。需要先設定 Google OAuth 用戶端 ID（見下方）
+
+#### 設定 Google OAuth 用戶端 ID（一次即可）
+1. 到 [Google Cloud Console](https://console.cloud.google.com/) 建立一個專案（免費）
+2. 「API 和服務 → 程式庫」搜尋 **Google Drive API**，按「啟用」
+3. 「OAuth 同意畫面」：使用者類型選「外部」，填寫 App 名稱與聯絡信箱；在「測試使用者」加入要使用的家人 Google 帳號
+4. 「憑證 → 建立憑證 → OAuth 用戶端 ID」，應用程式類型選「網頁應用程式」，在「已授權的 JavaScript 來源」加入：
+   - `https://1120yg-allen.github.io`
+   - （本機測試時）`http://localhost:8000`
+5. 複製「用戶端 ID」（`…apps.googleusercontent.com`），任選一種方式設定：
+   - 寫在 `health-tracker/config.js` 的 `googleClientId`（全家人都不用再設定）
+   - 或在 App「設定 → 雲端備份 → 設定 Google OAuth 用戶端 ID」貼上（只套用在這台裝置）
+
+App 只要求 `drive.appdata` 權限，**看不到你雲端硬碟裡的其他檔案**。
+
 ### ☁️ 資料儲存方式（可選）
 在「設定 → 資料儲存方式」選擇：
 
@@ -105,6 +138,8 @@ App 也可以放在 GitHub Pages 等靜態網站，同步伺服器放在別處�
 | `labs.js` | 檢驗判讀與報告文字解析 |
 | `ocr.js` | 拍照辨識（影像前處理＋Tesseract.js） |
 | `advice.js` | 每月統計與健康建議規則（飲食、睡眠、運動、追蹤） |
+| `integrations.js` | Apple 健康／Google Takeout 匯入、ZIP 讀取、iCloud 與 Google 雲端硬碟備份 |
+| `config.js` | 網站設定（Google OAuth 用戶端 ID，選填） |
 | `app.js` | 指標定義、判讀、圖表與所有畫面 |
 | `sw.js` | Service Worker：離線快取、點擊通知 |
 | `manifest.json`、`icon.svg` | PWA 設定與圖示 |

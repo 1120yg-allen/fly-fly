@@ -254,6 +254,8 @@ function switchProfile(id) {
   closeMedForm();
   pickDefaultChartMetric();
   if (currentView === 'lab-edit') { labEdit = null; currentView = 'labs'; showView('labs'); }
+  pendingImports = null;
+  $('#hi-preview').hidden = true;
   renderView();
   toast(`已切換到 ${currentProfile().name}`);
 }
@@ -1620,6 +1622,7 @@ async function onConnectSync(ev) {
 function renderSettings() {
   renderProfiles();
   renderSync();
+  renderCloudBackup();
 }
 
 function download(filename, content, mime) {
@@ -1667,33 +1670,148 @@ function exportCSV() {
   download(`health-${dayKey(new Date())}.csv`, '﻿' + rows.map((r) => r.map(q).join(',')).join('\n'), 'text/csv');
 }
 
+/** 合併備份資料（JSON 檔或 Google 雲端硬碟），回傳新增筆數 */
+function importBackupData(data) {
+  let incoming;
+  if (Array.isArray(data?.profiles)) {
+    incoming = sanitize(data);
+  } else if (Array.isArray(data?.entries)) {
+    // 舊版單人備份：匯入到目前的成員
+    const { entries } = migrateLegacy(data, local.currentProfileId);
+    incoming = sanitize({ entries });
+  } else {
+    throw new Error('format');
+  }
+  const before = new Set(COLLECTIONS.flatMap((c) => db[c].map((r) => r.id)));
+  const added = COLLECTIONS.reduce((n, c) => n + incoming[c].filter((r) => !before.has(r.id) && !r.deleted).length, 0);
+  db = mergeData(db, incoming);
+  ensureProfile();
+  persist();
+  renderView();
+  return added;
+}
+
 function importJSON(file) {
   const reader = new FileReader();
   reader.onload = () => {
     try {
-      const data = JSON.parse(reader.result);
-      let incoming;
-      if (Array.isArray(data.profiles)) {
-        incoming = sanitize(data);
-      } else if (Array.isArray(data.entries)) {
-        // 舊版單人備份：匯入到目前的成員
-        const { entries } = migrateLegacy(data, local.currentProfileId);
-        incoming = sanitize({ entries });
-      } else {
-        throw new Error('format');
-      }
-      const before = new Set(COLLECTIONS.flatMap((c) => db[c].map((r) => r.id)));
-      const added = COLLECTIONS.reduce((n, c) => n + incoming[c].filter((r) => !before.has(r.id) && !r.deleted).length, 0);
-      db = mergeData(db, incoming);
-      ensureProfile();
-      persist();
-      renderView();
-      toast(`已匯入 ${added} 筆新資料`);
+      toast(`已匯入 ${importBackupData(JSON.parse(reader.result))} 筆新資料`);
     } catch {
       toast('匯入失敗：檔案格式不正確');
     }
   };
   reader.readAsText(file);
+}
+
+/* ---------- 匯入 Apple／Google 健康資料 ---------- */
+let pendingImports = null;
+
+async function onHealthFiles(fileList) {
+  if (!fileList.length) return;
+  const days = Number($('#hi-range').value);
+  const since = days ? new Date(Date.now() - days * 864e5) : new Date(1970, 0, 1);
+  since.setHours(0, 0, 0, 0);
+  const prog = $('#hi-progress');
+  prog.hidden = false;
+  $('#hi-preview').hidden = true;
+  try {
+    const imports = await readHealthFiles(fileList, since, (text, p) => {
+      $('#hi-text').textContent = text;
+      $('#hi-bar-fill').style.width = `${Math.round((p || 0) * 100)}%`;
+    });
+    pendingImports = imports.filter((imp) => importSummary(imp).total > 0);
+    renderImportPreview();
+  } catch (e) {
+    console.error(e);
+    toast(e.message || '讀取失敗，請確認檔案');
+  } finally {
+    prog.hidden = true;
+    $('#hi-bar-fill').style.width = '0';
+  }
+}
+
+function renderImportPreview() {
+  const box = $('#hi-preview');
+  box.hidden = false;
+  if (!pendingImports?.length) {
+    box.innerHTML = '<p class="small">檔案裡沒有找到這段期間可匯入的健康資料。請確認選的是 Apple「健康」的 <code>export.zip</code>，或 Google Takeout 的 Fitbit／Fit 匯出檔，也可以把匯入期間改長一點。</p>';
+    return;
+  }
+  const fmtD = (d) => (d ? d.replace(/-/g, '/') : '');
+  box.innerHTML = pendingImports.map((imp, i) => {
+    const sum = importSummary(imp);
+    const lb = imp.source === 'google' && [...imp.weight.values()].some((w) => w.fitbit);
+    return `<div>
+      <h4>${IMPORT_TYPES_TEXT[imp.source]}　${fmtD(sum.from)} – ${fmtD(sum.to)}</h4>
+      <ul>${sum.parts.map(([label, n, unit]) => `<li>${label}：${n.toLocaleString()} ${unit}</li>`).join('')}</ul>
+      ${lb ? `<label class="check small"><input type="checkbox" id="hi-lb-${i}" ${fitbitWeightLooksLb(imp) ? 'checked' : ''}> Fitbit 體重單位是「磅」（勾選後換算成公斤）</label>` : ''}
+    </div>`;
+  }).join('') + `<div class="form-actions wrap">
+      <button type="button" id="btn-hi-cancel" class="btn ghost">取消</button>
+      <button type="button" id="btn-hi-apply" class="btn primary">匯入到「${escapeHTML(currentProfile().name)}」</button>
+    </div>`;
+  $('#btn-hi-cancel').addEventListener('click', () => { pendingImports = null; box.hidden = true; });
+  $('#btn-hi-apply').addEventListener('click', applyHealthImport);
+}
+
+function applyHealthImport() {
+  // 依序處理每個來源，後處理的會和已寫入的其他來源比較
+  const res = { added: 0, updated: 0 };
+  for (const [i, imp] of pendingImports.entries()) {
+    const all = importToEntries(imp, local.currentProfileId, { fitbitLb: !!$(`#hi-lb-${i}`)?.checked });
+    const { records, replaced } = dedupeAcrossSources(all, db.entries);
+    const r = upsertMany('entries', records, replaced);
+    if (!r) return;
+    res.added += r.added;
+    res.updated += r.updated;
+  }
+  pendingImports = null;
+  $('#hi-preview').hidden = true;
+  pickDefaultChartMetric();
+  toast(`已匯入 ${res.added.toLocaleString()} 筆新紀錄${res.updated ? `，更新 ${res.updated.toLocaleString()} 筆` : ''}`);
+}
+
+/* ---------- 雲端備份 ---------- */
+function renderCloudBackup() {
+  $('#hi-profile').textContent = currentProfile().name;
+  const g = local.gdrive || {};
+  if (document.activeElement !== $('#gdrive-client')) $('#gdrive-client').value = g.clientId || '';
+  const configured = !!GDrive.clientId();
+  $('#btn-gdrive-backup').disabled = !configured;
+  $('#btn-gdrive-restore').disabled = !configured;
+  $('#gdrive-status').textContent = !configured
+    ? '尚未設定 Google OAuth 用戶端 ID，請展開下方說明。也可以先用上面的「備份到 iCloud／雲端硬碟」。'
+    : g.lastBackup ? `上次備份：${new Date(g.lastBackup).toLocaleString('zh-TW')}` : '已設定，尚未備份過。';
+}
+
+async function withBusy(btn, label, fn) {
+  const text = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = label;
+  try { return await fn(); } finally { btn.textContent = text; btn.disabled = false; }
+}
+
+async function onGDriveBackup(ev) {
+  try {
+    const f = await withBusy(ev.currentTarget, '備份中…', () => GDrive.backup());
+    local.gdrive = { ...(local.gdrive || {}), lastBackup: f.modifiedTime || new Date().toISOString() };
+    persistLocal();
+    renderCloudBackup();
+    toast('已備份到 Google 雲端硬碟');
+  } catch (e) {
+    toast(e.message);
+  }
+}
+
+async function onGDriveRestore(ev) {
+  try {
+    const found = await withBusy(ev.currentTarget, '讀取中…', () => GDrive.restore());
+    if (!found) return toast('Google 雲端硬碟中還沒有備份');
+    if (!confirm(`找到 ${new Date(found.modifiedTime).toLocaleString('zh-TW')} 的備份，要合併到這台裝置嗎？（現有資料會保留，較新的版本為準）`)) return;
+    toast(`已還原 ${importBackupData(found.data)} 筆新資料`);
+  } catch (e) {
+    toast(e.message === 'format' ? '備份檔格式不正確' : e.message);
+  }
 }
 
 function clearAll() {
@@ -1813,6 +1931,21 @@ function init() {
 
   // 備份
   $('#btn-export-json').addEventListener('click', exportJSON);
+
+  // Apple／Google
+  $('#hi-file').addEventListener('change', (e) => { onHealthFiles(e.target.files); e.target.value = ''; });
+  $('#btn-share-backup').addEventListener('click', async () => {
+    const r = await shareBackup();
+    if (r === 'downloaded') toast('已下載備份檔，可存到 iCloud 雲端硬碟或 Google 雲端硬碟');
+  });
+  $('#btn-gdrive-backup').addEventListener('click', onGDriveBackup);
+  $('#btn-gdrive-restore').addEventListener('click', onGDriveRestore);
+  $('#btn-gdrive-save').addEventListener('click', () => {
+    local.gdrive = { ...(local.gdrive || {}), clientId: $('#gdrive-client').value.trim() };
+    persistLocal();
+    renderCloudBackup();
+    toast(local.gdrive.clientId ? '已儲存用戶端 ID' : '已清除用戶端 ID');
+  });
   $('#btn-export-csv').addEventListener('click', exportCSV);
   $('#import-file').addEventListener('change', (e) => {
     if (e.target.files[0]) importJSON(e.target.files[0]);

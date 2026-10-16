@@ -316,6 +316,73 @@
         <p id="sync-error" class="hint warn"></p>
       </div>
 
+      <h2 class="section-title">匯入 Apple 與 Google 健康資料</h2>
+      <div class="card form">
+        <p class="muted small">把手機的步數、睡眠、運動時間、靜止心率、體重、血壓、血糖、體溫、飲水匯入目前的成員「<span id="hi-profile"></span>」。檔案只在這台裝置上解析，不會上傳；重複匯入同一段期間只會更新，不會重複。</p>
+        <label>匯入期間
+          <select id="hi-range">
+            <option value="90">最近 3 個月</option>
+            <option value="365" selected>最近 1 年</option>
+            <option value="1095">最近 3 年</option>
+            <option value="0">全部（資料量大時可能較慢）</option>
+          </select>
+        </label>
+        <div class="form-actions wrap">
+          <label class="btn primary file-btn" for="hi-file">選擇檔案</label>
+          <input type="file" id="hi-file" accept=".zip,.xml,.json,.csv,application/zip,application/xml,text/xml,application/json,text/csv" multiple hidden>
+        </div>
+        <details class="howto">
+          <summary> Apple「健康」怎麼匯出？</summary>
+          <ol>
+            <li>打開 iPhone 的「健康」App，點右上角的頭像。</li>
+            <li>拉到最下方，點「匯出所有健康資料」→「匯出」。</li>
+            <li>完成後選「儲存到檔案」，存成 <code>export.zip</code>。</li>
+            <li>回到這裡點「選擇檔案」，選擇剛剛的 <code>export.zip</code>。</li>
+          </ol>
+          <p class="muted small">Apple Watch 與 iPhone 同時計步時，每天會取較大的一方，避免重複計算。</p>
+        </details>
+        <details class="howto">
+          <summary>Google（Fitbit／Google Fit）怎麼匯出？</summary>
+          <ol>
+            <li>到 <a href="https://takeout.google.com/" target="_blank" rel="noopener">Google Takeout</a>，先「取消全選」，再勾選「Fitbit」（或「Fit」）。</li>
+            <li>建立匯出，檔案類型選 .zip，等 Google 寄信通知後下載。</li>
+            <li>回到這裡點「選擇檔案」，選擇下載的 <code>takeout-….zip</code>。</li>
+          </ol>
+          <p class="muted small">Android 的 Health Connect 目前沒有網頁可以讀取的匯出格式；如果你的手錶或 App 會同步到 Fitbit，可以從 Fitbit 匯出。</p>
+        </details>
+        <div id="hi-progress" class="ocr-progress" hidden>
+          <div class="ocr-bar"><span id="hi-bar-fill"></span></div>
+          <p id="hi-text" class="muted small"></p>
+        </div>
+        <div id="hi-preview" class="hi-preview" hidden></div>
+      </div>
+
+      <h2 class="section-title">雲端備份（iCloud／Google 雲端硬碟）</h2>
+      <div class="card form">
+        <p class="muted small">把所有成員、紀錄、藥物、檢驗報告存成一個備份檔，換手機或清除瀏覽器資料後可以還原。</p>
+        <div class="form-actions wrap">
+          <button id="btn-share-backup" class="btn primary">備份到 iCloud／雲端硬碟</button>
+          <label class="btn file-btn" for="import-file">從備份檔還原</label>
+        </div>
+        <p class="muted small">iPhone：在分享選單選「儲存到檔案 → iCloud 雲端硬碟」。Android：選「雲端硬碟」。還原時從檔案選單打開 iCloud 雲端硬碟或 Google 雲端硬碟中的備份檔即可。</p>
+        <div class="gdrive">
+          <div class="field-label">Google 雲端硬碟一鍵備份</div>
+          <div class="form-actions wrap">
+            <button id="btn-gdrive-backup" class="btn">立即備份到 Google 雲端硬碟</button>
+            <button id="btn-gdrive-restore" class="btn">從 Google 雲端硬碟還原</button>
+          </div>
+          <p id="gdrive-status" class="muted small"></p>
+          <details class="howto">
+            <summary>設定 Google OAuth 用戶端 ID</summary>
+            <p class="muted small">一鍵備份需要一組 Google OAuth 用戶端 ID（設定一次即可，步驟見 README）。網站管理者也可以直接寫在 <code>config.js</code>，全家人就不用各自設定。</p>
+            <label>用戶端 ID
+              <input type="text" id="gdrive-client" placeholder="xxxxxxxx.apps.googleusercontent.com" autocomplete="off" spellcheck="false">
+            </label>
+            <div class="form-actions"><button type="button" id="btn-gdrive-save" class="btn">儲存</button></div>
+          </details>
+        </div>
+      </div>
+
       <h2 class="section-title">資料備份</h2>
       <div class="card form">
         <p class="muted small">建議定期匯出備份。JSON 包含所有成員與服藥資料，可再匯入。</p>
@@ -361,6 +428,8 @@
   <script src="labs.js"></script>
   <script src="ocr.js"></script>
   <script src="advice.js"></script>
+  <script src="config.js"></script>
+  <script src="integrations.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

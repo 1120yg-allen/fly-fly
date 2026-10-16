@@ -323,3 +323,17 @@ textarea { resize: vertical; }
 .advice .a-src .region { border: 1px solid var(--border); border-radius: 999px; padding: 0 6px; margin-right: 2px; }
 .advice-toggle { align-self: end; padding-bottom: 10px; }
 .field-note { margin: -4px 0 0; }
+
+/* 匯入與雲端備份 */
+.howto { border-top: 1px solid var(--border); padding-top: 8px; }
+.howto summary { cursor: pointer; font-size: .9rem; color: var(--text); }
+.howto ol { margin: 8px 0 4px; padding-left: 1.3em; display: grid; gap: 4px; font-size: .9rem; line-height: 1.6; }
+.howto p { margin: 4px 0 0; }
+.howto code, .muted code { font-size: .85em; background: var(--bg); padding: 1px 5px; border-radius: 4px; }
+.hi-preview { display: grid; gap: 8px; border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
+.hi-preview[hidden] { display: none; }
+.hi-preview h4 { margin: 0; font-size: .95rem; }
+.hi-preview ul { margin: 0; padding-left: 1.2em; font-size: .9rem; display: grid; gap: 2px; font-variant-numeric: tabular-nums; }
+.gdrive { display: grid; gap: 8px; border-top: 1px solid var(--border); padding-top: 12px; }
+.gdrive p { margin: 0; }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
