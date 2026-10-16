@@ -27,6 +27,7 @@
         <div class="card"><ul id="home-dose-list" class="dose-list"></ul></div>
       </div>
 
+      <button id="home-backup" class="card lab-home hidden" type="button"></button>
       <button id="home-advice" class="card lab-home hidden" type="button"></button>
       <button id="home-lab" class="card lab-home hidden" type="button"></button>
 
@@ -281,6 +282,21 @@
         </div>
       </form>
 
+      <h2 class="section-title">資料保存狀態</h2>
+      <div class="card form" id="storage-card">
+        <ul class="storage-status">
+          <li><span>儲存位置</span><strong id="st-backend"></strong></li>
+          <li><span>長期保存</span><strong id="st-persist"></strong></li>
+          <li><span>已使用空間</span><strong id="st-usage"></strong></li>
+          <li><span>上次備份</span><strong id="st-backup"></strong></li>
+        </ul>
+        <div class="form-actions wrap">
+          <button type="button" id="btn-persist" class="btn hidden">申請長期保存</button>
+          <button type="button" id="btn-backup-now" class="btn">立即備份</button>
+        </div>
+        <p id="st-tip" class="muted small"></p>
+      </div>
+
       <h2 class="section-title">資料儲存方式</h2>
       <div class="card form">
         <label class="check"><input type="radio" name="storage-mode" value="local"> 只存在這台裝置（預設）</label>
@@ -357,7 +373,7 @@
         <div id="hi-preview" class="hi-preview" hidden></div>
       </div>
 
-      <h2 class="section-title">雲端備份（iCloud／Google 雲端硬碟）</h2>
+      <h2 class="section-title" id="backup-section">雲端備份（iCloud／Google 雲端硬碟）</h2>
       <div class="card form">
         <p class="muted small">把所有成員、紀錄、藥物、檢驗報告存成一個備份檔，換手機或清除瀏覽器資料後可以還原。</p>
         <div class="form-actions wrap">

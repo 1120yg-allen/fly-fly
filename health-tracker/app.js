@@ -262,6 +262,7 @@ function switchProfile(id) {
 
 /* ---------- 總覽 ---------- */
 function renderHome() {
+  renderHomeBackup();
   renderHomeAdvice();
   renderHomeLab();
   renderDoseList($('#home-dose-list'), { compact: true });
@@ -1623,6 +1624,7 @@ function renderSettings() {
   renderProfiles();
   renderSync();
   renderCloudBackup();
+  renderStorageStatus();
 }
 
 function download(filename, content, mime) {
@@ -1639,6 +1641,88 @@ function download(filename, content, mime) {
 function exportJSON() {
   const data = { app: 'health-tracker', exportedAt: new Date().toISOString(), ...db };
   download(`health-${dayKey(new Date())}.json`, JSON.stringify(data, null, 2), 'application/json');
+  markBackedUp();
+}
+
+function markBackedUp() {
+  local.lastBackupAt = Date.now();
+  persistLocal();
+  if (currentView === 'settings') renderStorageStatus();
+}
+
+/* ---------- 資料保存狀態 ---------- */
+const fmtBytes = (n) => (n >= 1e9 ? `${(n / 1e9).toFixed(1)} GB` : n >= 1e6 ? `${(n / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1e3))} KB`);
+const isStandalone = () => window.matchMedia?.('(display-mode: standalone)').matches || navigator.standalone === true;
+const isIOS = () => /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const BACKUP_REMIND_DAYS = 30;
+
+function daysSinceBackup() {
+  return local.lastBackupAt ? Math.floor((Date.now() - local.lastBackupAt) / 864e5) : null;
+}
+
+/** 有一定資料量、且超過 30 天沒備份（或從沒備份過且已使用 14 天以上）時提醒 */
+function needsBackupReminder() {
+  const records = live('entries').length;
+  if (records < 20) return false;
+  const d = daysSinceBackup();
+  if (d != null) return d >= BACKUP_REMIND_DAYS;
+  const first = Math.min(...live('entries').map((e) => e.updatedAt || Date.now()));
+  return Date.now() - first > 14 * 864e5;
+}
+
+function renderHomeBackup() {
+  const card = $('#home-backup');
+  const show = needsBackupReminder() && local.backupSnoozeUntil !== dayKey(new Date());
+  card.classList.toggle('hidden', !show);
+  if (!show) return;
+  const d = daysSinceBackup();
+  card.innerHTML = `
+    <div class="icon">💾</div>
+    <div class="body">
+      <div class="title">${d == null ? '還沒有備份過資料' : `已經 ${d} 天沒有備份`}</div>
+      <div class="meta">資料只存在這台裝置，建議備份到 iCloud 或 Google 雲端硬碟</div>
+    </div>
+    <div class="chev">›</div>`;
+}
+
+async function renderStorageStatus() {
+  const total = COLLECTIONS.reduce((n, c) => n + live(c).length, 0);
+  $('#st-backend').textContent = storage.backend === 'indexedDB' ? '這台裝置（IndexedDB 資料庫）' : '這台裝置（localStorage，容量較小）';
+  const persisted = storage.persisted ?? await requestPersistentStorage(false);
+  const pEl = $('#st-persist');
+  pEl.textContent = persisted === true ? '已受保護' : persisted === false ? '未受保護' : '此瀏覽器不支援';
+  pEl.className = persisted === true ? 'ok' : persisted === false ? 'warn' : '';
+  $('#btn-persist').classList.toggle('hidden', persisted !== false);
+  const est = await storageEstimate();
+  $('#st-usage').textContent = `${total.toLocaleString()} 筆資料${est?.usage != null ? ` · ${fmtBytes(est.usage)}${est.quota ? `／可用約 ${fmtBytes(est.quota)}` : ''}` : ''}`;
+  const d = daysSinceBackup();
+  const bEl = $('#st-backup');
+  bEl.textContent = d == null ? '從未備份' : d === 0 ? '今天' : `${d} 天前`;
+  bEl.className = d == null || d >= BACKUP_REMIND_DAYS ? 'warn' : 'ok';
+  const tips = [];
+  if (storage.error) tips.push(`⚠️ 最近一次儲存失敗（${storage.error}），請立即備份。`);
+  if (isIOS() && !isStandalone()) tips.push('iPhone／iPad：在 Safari 中，網站若 7 天沒有使用，資料可能被系統清除。請點「分享 → 加入主畫面」，從主畫面開啟 App 就不受此限制。');
+  else if (persisted === false) tips.push('瀏覽器空間不足時可能清除未受保護的網站資料。把 App 安裝到主畫面或桌面，並常常使用，瀏覽器較容易同意長期保存。');
+  if (storage.backend !== 'indexedDB') tips.push('這個瀏覽器（或無痕模式）無法使用 IndexedDB，容量約 5 MB，請定期備份。');
+  tips.push('清除瀏覽器的網站資料會一併刪除紀錄，換手機前請先備份。');
+  $('#st-tip').textContent = tips.join(' ');
+}
+
+async function backupNow() {
+  if (GDrive.clientId()) {
+    try {
+      const f = await GDrive.backup();
+      local.gdrive = { ...(local.gdrive || {}), lastBackup: f.modifiedTime || new Date().toISOString() };
+      markBackedUp();
+      renderCloudBackup();
+      return toast('已備份到 Google 雲端硬碟');
+    } catch (e) {
+      toast(`${e.message}，改用分享備份檔`);
+    }
+  }
+  const r = await shareBackup();
+  if (r !== 'cancelled') markBackedUp();
+  if (r === 'downloaded') toast('已下載備份檔，可存到 iCloud 雲端硬碟或 Google 雲端硬碟');
 }
 
 function exportCSV() {
@@ -1795,7 +1879,7 @@ async function onGDriveBackup(ev) {
   try {
     const f = await withBusy(ev.currentTarget, '備份中…', () => GDrive.backup());
     local.gdrive = { ...(local.gdrive || {}), lastBackup: f.modifiedTime || new Date().toISOString() };
-    persistLocal();
+    markBackedUp();
     renderCloudBackup();
     toast('已備份到 Google 雲端硬碟');
   } catch (e) {
@@ -1827,8 +1911,11 @@ function clearAll() {
 }
 
 /* ---------- 初始化 ---------- */
-function init() {
-  loadAll();
+async function init() {
+  await loadAll();
+  onExternalChange = () => { renderView(); };
+  // 已有資料時，請瀏覽器長期保存（Chrome、Edge、Safari 不會跳出詢問）
+  if (live('entries').length) requestPersistentStorage(true);
 
   for (const [key, t] of Object.entries(TYPES)) {
     $('#f-type').add(new Option(`${t.icon} ${t.label}`, key));
@@ -1936,7 +2023,20 @@ function init() {
   $('#hi-file').addEventListener('change', (e) => { onHealthFiles(e.target.files); e.target.value = ''; });
   $('#btn-share-backup').addEventListener('click', async () => {
     const r = await shareBackup();
+    if (r !== 'cancelled') markBackedUp();
     if (r === 'downloaded') toast('已下載備份檔，可存到 iCloud 雲端硬碟或 Google 雲端硬碟');
+  });
+  $('#btn-backup-now').addEventListener('click', backupNow);
+  $('#btn-persist').addEventListener('click', async () => {
+    const ok = await requestPersistentStorage(true);
+    renderStorageStatus();
+    toast(ok ? '已取得長期保存' : '瀏覽器暫時沒有同意，安裝到主畫面並常使用後再試一次');
+  });
+  $('#home-backup').addEventListener('click', () => {
+    local.backupSnoozeUntil = dayKey(new Date());
+    persistLocal();
+    showView('settings');
+    $('#storage-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
   $('#btn-gdrive-backup').addEventListener('click', onGDriveBackup);
   $('#btn-gdrive-restore').addEventListener('click', onGDriveRestore);
@@ -2000,4 +2100,7 @@ function init() {
   renderSyncStatus();
 }
 
-document.addEventListener('DOMContentLoaded', init);
+document.addEventListener('DOMContentLoaded', () => init().catch((e) => {
+  console.error(e);
+  toast('App 啟動失敗，請重新整理');
+}));
