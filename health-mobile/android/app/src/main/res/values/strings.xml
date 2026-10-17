@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">健康紀錄</string>
+    <string name="title_activity_main">健康紀錄</string>
+    <string name="package_name">com.flyfly.healthtracker</string>
+    <string name="custom_url_scheme">com.flyfly.healthtracker</string>
+</resources>

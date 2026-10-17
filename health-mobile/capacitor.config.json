@@ -1,0 +1,14 @@
+{
+  "appId": "com.flyfly.healthtracker",
+  "appName": "健康紀錄",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": false
+  },
+  "plugins": {
+    "LocalNotifications": {
+      "smallIcon": "ic_stat_health",
+      "iconColor": "#0f766e"
+    }
+  }
+}

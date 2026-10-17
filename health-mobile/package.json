@@ -1,0 +1,24 @@
+{
+  "name": "health-tracker-mobile",
+  "private": true,
+  "version": "1.0.0",
+  "description": "健康紀錄 App 的 Android／iOS 版（Capacitor）",
+  "scripts": {
+    "build": "node scripts/copy-web.mjs",
+    "sync": "npm run build && npx cap sync",
+    "apk": "npm run build && npx cap sync android && cd android && ./gradlew assembleRelease",
+    "ios": "npm run build && npx cap sync ios && npx cap open ios"
+  },
+  "dependencies": {
+    "@capacitor/android": "8.5.3",
+    "@capacitor/core": "8.5.3",
+    "@capacitor/filesystem": "8.1.5",
+    "@capacitor/ios": "8.5.3",
+    "@capacitor/local-notifications": "8.3.1",
+    "@capacitor/share": "8.0.3",
+    "health-tracker-healthkit": "file:plugins/healthkit"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.5.3"
+  }
+}
