@@ -344,9 +344,11 @@
           </select>
         </label>
         <div class="form-actions wrap">
+          <button type="button" id="btn-hk" class="btn primary" hidden>從 Apple 健康讀取</button>
           <label class="btn primary file-btn" for="hi-file">選擇檔案</label>
           <input type="file" id="hi-file" accept=".zip,.xml,.json,.csv,application/zip,application/xml,text/xml,application/json,text/csv" multiple hidden>
         </div>
+        <p id="hk-note" class="muted small" hidden>iPhone App 可以直接讀取「健康」：第一次會跳出授權畫面，請選擇要分享的項目（App 只讀取、不會寫入）。之後可隨時再按一次更新。若讀不到資料，到「設定 → 健康 → 資料取用權限與裝置 → 健康紀錄」開啟權限。</p>
         <details class="howto">
           <summary> Apple「健康」怎麼匯出？</summary>
           <ol>

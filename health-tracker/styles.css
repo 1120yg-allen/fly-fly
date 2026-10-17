@@ -332,6 +332,7 @@ textarea { resize: vertical; }
 .howto code, .muted code { font-size: .85em; background: var(--bg); padding: 1px 5px; border-radius: 4px; }
 .hi-preview { display: grid; gap: 8px; border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
 .hi-preview[hidden] { display: none; }
+.btn[hidden], #hk-note[hidden] { display: none; }
 .hi-preview h4 { margin: 0; font-size: .95rem; }
 .hi-preview ul { margin: 0; padding-left: 1.2em; font-size: .9rem; display: grid; gap: 2px; font-variant-numeric: tabular-nums; }
 .gdrive { display: grid; gap: 8px; border-top: 1px solid var(--border); padding-top: 12px; }

@@ -1422,21 +1422,24 @@ function nativeReminderItems() {
       });
     }
   }
+  // 系統對每個 App 的預約通知數量有上限（iOS 只保留最近 64 個），只排最近的；每月回顧一定保留
+  const limit = Native.platform === 'ios' ? 60 : 120;
+  items.sort((a, b) => a.at - b.at);
+  const monthly = [];
   const st = adviceSettings();
   if (st.enabled) {
     for (const p of live('profiles')) {
       const today = new Date();
       let at = new Date(today.getFullYear(), today.getMonth(), st.day, 9, 0);
       if (at <= today || st.reviewed[p.id] === monthKey(today)) at = new Date(today.getFullYear(), today.getMonth() + 1, st.day, 9, 0);
-      items.push({
+      monthly.push({
         key: `monthly:${p.id}:${monthKey(at)}`, at, extra: { view: 'advice', profileId: p.id },
         title: `📅 ${multi ? p.name + '：' : ''}每月健康回顧`,
         body: '查看上個月的飲食、睡眠、運動建議與追蹤提醒。',
       });
     }
   }
-  // Android 對每個 App 的鬧鐘數量有限制，只排最近的 120 個
-  return items.sort((a, b) => a.at - b.at).slice(0, 120);
+  return [...items.slice(0, Math.max(0, limit - monthly.length)), ...monthly].sort((a, b) => a.at - b.at);
 }
 
 let nativeTimer = null;
@@ -1763,7 +1766,7 @@ async function renderStorageStatus() {
   bEl.className = d == null || d >= BACKUP_REMIND_DAYS ? 'warn' : 'ok';
   const tips = [];
   if (storage.error) tips.push(`⚠️ 最近一次儲存失敗（${storage.error}），請立即備份。`);
-  if (Native.enabled) tips.push('資料存在 App 內，不會被自動清除；Android 的系統備份（設定 → Google → 備份）也會一併備份 App 資料。解除安裝 App 會刪除資料，請先備份。');
+  if (Native.enabled) tips.push('資料存在 App 內，不會被自動清除；Android 的系統備份（設定 → Google → 備份）也會一併備份 App 資料；iPhone 請定期用下方「備份到 iCloud」存一份備份檔。解除安裝 App 會刪除資料，請先備份。');
   else if (isIOS() && !isStandalone()) tips.push('iPhone／iPad：在 Safari 中，網站若 7 天沒有使用，資料可能被系統清除。請點「分享 → 加入主畫面」，從主畫面開啟 App 就不受此限制。');
   else if (persisted === false) tips.push('瀏覽器空間不足時可能清除未受保護的網站資料。把 App 安裝到主畫面或桌面，並常常使用，瀏覽器較容易同意長期保存。');
   if (storage.backend !== 'indexedDB') tips.push('這個瀏覽器（或無痕模式）無法使用 IndexedDB，容量約 5 MB，請定期備份。');
@@ -1877,9 +1880,36 @@ async function onHealthFiles(fileList) {
   }
 }
 
-function renderImportPreview() {
+/** iOS App：直接讀取 Apple 健康，結果同樣顯示在預覽中，確認後才寫入 */
+async function onHealthKitRead() {
+  const days = Number($('#hi-range').value) || 3650;
+  const btn = $('#btn-hk');
+  btn.disabled = true;
+  $('#hi-preview').hidden = true;
+  $('#hi-progress').hidden = false;
+  $('#hi-text').textContent = '讀取 Apple 健康資料…';
+  try {
+    const data = await Native.healthKit.read(days);
+    if (data.errors?.length) console.warn('HealthKit', data.errors);
+    const imp = healthKitToImport(data);
+    pendingImports = importSummary(imp).total > 0 ? [imp] : [];
+    renderImportPreview(true);
+  } catch (e) {
+    console.error(e);
+    toast(e.message || '無法讀取 Apple 健康');
+  } finally {
+    btn.disabled = false;
+    $('#hi-progress').hidden = true;
+  }
+}
+
+function renderImportPreview(fromHealthKit = false) {
   const box = $('#hi-preview');
   box.hidden = false;
+  if (!pendingImports?.length && fromHealthKit) {
+    box.innerHTML = '<p class="small">沒有讀到這段期間的健康資料。若剛才在授權畫面沒有開啟項目，請到 iPhone「設定 → 健康 → 資料取用權限與裝置 → 健康紀錄」開啟，再按一次「從 Apple 健康讀取」。</p>';
+    return;
+  }
   if (!pendingImports?.length) {
     box.innerHTML = '<p class="small">檔案裡沒有找到這段期間可匯入的健康資料。請確認選的是 Apple「健康」的 <code>export.zip</code>，或 Google Takeout 的 Fitbit／Fit 匯出檔，也可以把匯入期間改長一點。</p>';
     return;
@@ -2104,6 +2134,10 @@ async function init() {
 
   // Apple／Google
   $('#hi-file').addEventListener('change', (e) => { onHealthFiles(e.target.files); e.target.value = ''; });
+  $('#btn-hk').addEventListener('click', onHealthKitRead);
+  if (Native.healthKit) {
+    Native.healthKit.available().then((ok) => { $('#btn-hk').hidden = !ok; $('#hk-note').hidden = !ok; });
+  }
   $('#btn-share-backup').addEventListener('click', async () => {
     const r = await shareBackup();
     if (r !== 'cancelled') markBackedUp();
@@ -2172,6 +2206,7 @@ async function init() {
   checkMonthlyReminder();
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState !== 'visible') return;
+    scheduleNativeReminders(0); // 補上已響過的通知，維持未來 14 天的提醒
     checkReminders(onInAppReminder);
     checkMonthlyReminder();
     if (currentView === 'home' || currentView === 'meds') renderView();

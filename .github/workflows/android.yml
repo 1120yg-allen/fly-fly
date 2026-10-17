@@ -6,7 +6,9 @@ on:
     branches: [main, claude/health-info-tracking-app-w5cf5u]
     paths:
       - 'health-tracker/**'
-      - 'health-android/**'
+      - 'health-mobile/**'
+      - '!health-mobile/ios/**'
+      - '!health-mobile/plugins/**'
       - '.github/workflows/android.yml'
   workflow_dispatch:
 
@@ -22,7 +24,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: health-android
+        working-directory: health-mobile
     steps:
       - uses: actions/checkout@v4
 
@@ -30,7 +32,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: health-android/package-lock.json
+          cache-dependency-path: health-mobile/package-lock.json
 
       - uses: actions/setup-java@v4
         with:
@@ -58,7 +60,7 @@ jobs:
           fi
 
       - name: 編譯 APK
-        working-directory: health-android/android
+        working-directory: health-mobile/android
         env:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
@@ -73,7 +75,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: health-tracker-apk
-          path: health-android/health-tracker-*.apk
+          path: health-mobile/health-tracker-*.apk
 
       - name: 發佈到 Releases（手機可以直接下載）
         env:
@@ -84,4 +86,4 @@ jobs:
             --prerelease \
             --target "$GITHUB_SHA" \
             --title "健康紀錄 Android 版（第 ${{ github.run_number }} 版）" \
-            --notes "從 ${GITHUB_REF_NAME} 分支自動編譯（${GITHUB_SHA::7}）。用 Android 手機下載 .apk 檔並開啟即可安裝；已安裝舊版時會直接更新，資料會保留。安裝說明見 health-android/README.md。"
+            --notes "從 ${GITHUB_REF_NAME} 分支自動編譯（${GITHUB_SHA::7}）。用 Android 手機下載 .apk 檔並開啟即可安裝；已安裝舊版時會直接更新，資料會保留。安裝說明見 health-mobile/README.md。"

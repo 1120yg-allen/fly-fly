@@ -1,18 +1,21 @@
 'use strict';
 
 /* ---------- 手機 App（Capacitor）原生功能 ----------
- * 在 Android App 裡執行時：
+ * 在 Android／iOS App 裡執行時：
  *   - 服藥與每月回顧提醒改用系統通知預先排程，App 完全關閉、手機重新開機後也會提醒
  *   - 匯出與備份檔案改用系統分享選單（WebView 不支援網頁下載）
+ *   - iOS 可以直接讀取 Apple「健康」的資料（health-mobile/plugins/healthkit）
  * 在一般瀏覽器中，這裡的功能都不會啟用。
  */
 const Native = (() => {
   const cap = window.Capacitor;
   const enabled = !!cap?.isNativePlatform?.();
+  const platform = enabled ? cap.getPlatform?.() || 'android' : 'web';
   const plugin = (name) => (enabled ? cap.Plugins?.[name] || cap.registerPlugin?.(name) : null);
   const LN = plugin('LocalNotifications');
   const FS = plugin('Filesystem');
   const SH = plugin('Share');
+  const HK = platform === 'ios' ? plugin('HealthKit') : null;
   const DOSE_ACTION = 'DOSE';
 
   // 通知 id 必須是正的 32 位元整數：用字串雜湊產生，同一個提醒每次都得到同一個 id
@@ -91,5 +94,16 @@ const Native = (() => {
     }
   }
 
-  return { enabled, init, permission, schedule, shareFile };
+  /** Apple 健康：先跳出授權畫面（只有第一次會問），再讀取最近 days 天的資料 */
+  const healthKit = HK && {
+    async available() {
+      try { return (await HK.isAvailable()).value; } catch { return false; }
+    },
+    async read(days) {
+      await HK.requestAuthorization();
+      return HK.readData({ days });
+    },
+  };
+
+  return { enabled, platform, init, permission, schedule, shareFile, healthKit };
 })();

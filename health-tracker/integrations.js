@@ -335,6 +335,28 @@ function addGoogleFile(out, name, content, since) {
 }
 
 /* ---------- 讀取使用者選的檔案 ---------- */
+/**
+ * iOS App 直接從 HealthKit 讀到的資料（native HealthKitPlugin.readData 的回傳值）→ 與 export.zip 相同的匯入格式。
+ * 來源一樣標記為 apple，所以和匯入 export.zip 的紀錄 id 相同，重複讀取只會更新。
+ */
+function healthKitToImport(data) {
+  const out = emptyImport('apple');
+  const daily = (rows) => new Map((rows || []).map(([t, v]) => [localDay(new Date(t)), v]));
+  out.steps = daily(data.steps);
+  out.exercise = daily(data.exercise);
+  out.water = daily(data.water);
+  out.heart = daily(data.heart);
+  const sleep = new DailyBySource();
+  for (const s of data.sleep || []) sleep.add(localDay(new Date(s.end)), s.source || '', (s.end - s.start) / 3600e3);
+  out.sleep = sleep.result();
+  for (const [t, v] of data.weight || []) out.weight.set(localDay(new Date(t)), { time: localTime(new Date(t)), weight: v });
+  out.bp = (data.bp || []).map(([t, sys, dia]) => ({ time: localTime(new Date(t)), sys, dia }));
+  out.glucose = (data.glucose || []).map(([t, value]) => ({ time: localTime(new Date(t)), value }));
+  out.temp = (data.temp || []).map(([t, celsius]) => ({ time: localTime(new Date(t)), celsius }));
+  out.files = 1;
+  return out;
+}
+
 const IMPORT_TYPES_TEXT = { apple: 'Apple 健康', google: 'Google（Fitbit／Google Fit）' };
 
 async function readHealthFiles(fileList, since, onProgress) {

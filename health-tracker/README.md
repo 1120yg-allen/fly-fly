@@ -174,4 +174,4 @@ spo2: {
 
 ## Android App
 
-同一份程式也可以安裝成 Android App（系統通知在 App 關閉時也會提醒，資料不會被瀏覽器清除），見 [`../health-android`](../health-android/README.md)。
+同一份程式也可以安裝成 Android／iPhone App（系統通知在 App 關閉時也會提醒，資料不會被瀏覽器清除；iPhone 版可直接讀取 Apple 健康），見 [`../health-mobile`](../health-mobile/README.md)。

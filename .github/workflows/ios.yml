@@ -1,0 +1,85 @@
+name: iOS App
+
+# 健康紀錄 App 有更新時，在 macOS 上編譯 iPhone 版，並把未簽章的 .ipa 發佈到 Releases 的「ios-latest」
+# （用 Sideloadly／AltStore 以自己的 Apple ID 簽章安裝；說明見 health-mobile/README.md）
+on:
+  push:
+    branches: [main, claude/health-info-tracking-app-w5cf5u]
+    paths:
+      - 'health-tracker/**'
+      - 'health-mobile/**'
+      - '!health-mobile/android/**'
+      - '.github/workflows/ios.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: health-mobile
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: health-mobile/package-lock.json
+
+      - name: 安裝套件並複製網頁
+        run: |
+          npm ci
+          npm run build
+          npx cap sync ios
+
+      - name: 編譯 iPhone 版
+        run: |
+          xcodebuild build \
+            -project ios/App/App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/dd" \
+            CURRENT_PROJECT_VERSION=${{ github.run_number }} \
+            CODE_SIGNING_ALLOWED=NO \
+            | tee "$RUNNER_TEMP/xcodebuild.log" | grep -E '(error|warning: .*HealthKit|BUILD (SUCCEEDED|FAILED))' || true
+          test -d "$RUNNER_TEMP/dd/Build/Products/Release-iphoneos/App.app" || { tail -80 "$RUNNER_TEMP/xcodebuild.log"; exit 1; }
+
+      - name: 打包 .ipa（臨時簽章並帶入 HealthKit 權限，安裝時會以你的 Apple ID 重新簽章）
+        run: |
+          APP="$RUNNER_TEMP/dd/Build/Products/Release-iphoneos/App.app"
+          find "$APP/Frameworks" -maxdepth 1 \( -name '*.framework' -o -name '*.dylib' \) -exec codesign --force --sign - --timestamp=none {} \; 2>/dev/null || true
+          codesign --force --sign - --timestamp=none --entitlements ios/App/App/App.entitlements "$APP"
+          codesign -d --entitlements - "$APP"
+          mkdir -p ipa/Payload
+          cp -R "$APP" ipa/Payload/
+          (cd ipa && zip -qry "../health-tracker-ios-${{ github.run_number }}.ipa" Payload)
+          ls -lh health-tracker-ios-*.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: health-tracker-ipa
+          path: health-mobile/health-tracker-ios-*.ipa
+
+      - name: 發佈到 Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete ios-latest --yes --cleanup-tag || true
+          gh release create ios-latest health-tracker-ios-*.ipa \
+            --prerelease \
+            --target "$GITHUB_SHA" \
+            --title "健康紀錄 iPhone 版（第 ${{ github.run_number }} 版）" \
+            --notes "從 ${GITHUB_REF_NAME} 分支自動編譯（${GITHUB_SHA::7}）。這是未經 App Store 簽章的 .ipa，需要用 Sideloadly 或 AltStore 以你的 Apple ID 簽章後安裝，詳見 health-mobile/README.md。"
