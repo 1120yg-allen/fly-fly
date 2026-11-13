@@ -375,14 +375,14 @@
         <div id="hi-preview" class="hi-preview" hidden></div>
       </div>
 
-      <h2 class="section-title" id="backup-section">雲端備份（iCloud／Google 雲端硬碟）</h2>
+      <h2 class="section-title" id="backup-section" data-ios="備份與還原">雲端備份（iCloud／Google 雲端硬碟）</h2>
       <div class="card form">
         <p class="muted small">把所有成員、紀錄、藥物、檢驗報告存成一個備份檔，換手機或清除瀏覽器資料後可以還原。</p>
         <div class="form-actions wrap">
-          <button id="btn-share-backup" class="btn primary">備份到 iCloud／雲端硬碟</button>
+          <button id="btn-share-backup" class="btn primary" data-ios="匯出備份檔">備份到 iCloud／雲端硬碟</button>
           <label class="btn file-btn" for="import-file">從備份檔還原</label>
         </div>
-        <p class="muted small">iPhone：在分享選單選「儲存到檔案 → iCloud 雲端硬碟」。Android：選「雲端硬碟」。還原時從檔案選單打開 iCloud 雲端硬碟或 Google 雲端硬碟中的備份檔即可。</p>
+        <p class="muted small" data-ios="備份檔會透過系統的分享選單交給你，由你決定要存放的位置（例如「儲存到檔案」）。App 不會自動把健康資料上傳到任何雲端服務。還原時按「從備份檔還原」選擇該檔案即可。">iPhone：在分享選單選「儲存到檔案 → iCloud 雲端硬碟」。Android：選「雲端硬碟」。還原時從檔案選單打開 iCloud 雲端硬碟或 Google 雲端硬碟中的備份檔即可。</p>
         <div class="gdrive">
           <div class="field-label">Google 雲端硬碟一鍵備份</div>
           <div class="form-actions wrap">
@@ -413,7 +413,15 @@
           <button id="btn-clear" class="btn danger">清除全部資料</button>
         </div>
       </div>
-      <p class="muted small disclaimer">本 App 的數值判讀僅供參考，不能取代醫師的診斷與建議。</p>
+      <h2 class="section-title">關於</h2>
+      <div class="card form">
+        <p class="small"><strong>醫療免責聲明</strong>：本 App 是個人健康紀錄工具，不是醫療器材。數值判讀、檢驗項目說明與健康建議皆為一般性衛教資訊，僅供參考，不能用來診斷或治療疾病，也不能取代醫師、藥師或營養師的專業意見。身體不適或數值異常時，請就醫；緊急狀況請撥打 119。</p>
+        <p class="muted small">你的資料只保存在這台裝置上，除非你自己開啟雲端同步或匯出備份。</p>
+        <div class="form-actions wrap">
+          <a class="btn" href="privacy.html" target="_blank" rel="noopener">隱私權政策</a>
+          <a class="btn" href="support.html" target="_blank" rel="noopener">使用說明與支援</a>
+        </div>
+      </div>
     </section>
   </main>
 

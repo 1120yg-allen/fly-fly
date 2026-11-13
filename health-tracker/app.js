@@ -1743,7 +1743,7 @@ function renderHomeBackup() {
     <div class="icon">💾</div>
     <div class="body">
       <div class="title">${d == null ? '還沒有備份過資料' : `已經 ${d} 天沒有備份`}</div>
-      <div class="meta">資料只存在這台裝置，建議備份到 iCloud 或 Google 雲端硬碟</div>
+      <div class="meta">${Native.platform === 'ios' ? '資料只存在這支手機，建議定期匯出備份檔' : '資料只存在這台裝置，建議備份到 iCloud 或 Google 雲端硬碟'}</div>
     </div>
     <div class="chev">›</div>`;
 }
@@ -1766,7 +1766,7 @@ async function renderStorageStatus() {
   bEl.className = d == null || d >= BACKUP_REMIND_DAYS ? 'warn' : 'ok';
   const tips = [];
   if (storage.error) tips.push(`⚠️ 最近一次儲存失敗（${storage.error}），請立即備份。`);
-  if (Native.enabled) tips.push('資料存在 App 內，不會被自動清除；Android 的系統備份（設定 → Google → 備份）也會一併備份 App 資料；iPhone 請定期用下方「備份到 iCloud」存一份備份檔。解除安裝 App 會刪除資料，請先備份。');
+  if (Native.enabled) tips.push('資料存在 App 內，不會被自動清除；Android 的系統備份（設定 → Google → 備份）也會一併備份 App 資料；iPhone 請定期用下方「匯出備份檔」存一份備份。解除安裝 App 會刪除資料，請先備份。');
   else if (isIOS() && !isStandalone()) tips.push('iPhone／iPad：在 Safari 中，網站若 7 天沒有使用，資料可能被系統清除。請點「分享 → 加入主畫面」，從主畫面開啟 App 就不受此限制。');
   else if (persisted === false) tips.push('瀏覽器空間不足時可能清除未受保護的網站資料。把 App 安裝到主畫面或桌面，並常常使用，瀏覽器較容易同意長期保存。');
   if (storage.backend !== 'indexedDB') tips.push('這個瀏覽器（或無痕模式）無法使用 IndexedDB，容量約 5 MB，請定期備份。');
@@ -1959,7 +1959,7 @@ function renderCloudBackup() {
   $('#btn-gdrive-backup').disabled = !configured;
   $('#btn-gdrive-restore').disabled = !configured;
   $('#gdrive-status').textContent = !configured
-    ? '尚未設定 Google OAuth 用戶端 ID，請展開下方說明。也可以先用上面的「備份到 iCloud／雲端硬碟」。'
+    ? '尚未設定 Google OAuth 用戶端 ID，請展開下方說明。也可以先用上面的備份按鈕。'
     : g.lastBackup ? `上次備份：${new Date(g.lastBackup).toLocaleString('zh-TW')}` : '已設定，尚未備份過。';
 }
 
@@ -2006,11 +2006,20 @@ function clearAll() {
 }
 
 /* ---------- 初始化 ---------- */
+const IS_IOS_APP = Native.platform === 'ios';
 async function init() {
   await loadAll();
   onExternalChange = () => { renderView(); };
   if (Native.enabled) {
     document.documentElement.classList.add('native-app');
+    // App 內的說明文件改開公開網頁（WebView 無法在新視窗開啟 App 內的檔案）
+    for (const el of document.querySelectorAll('a[href="privacy.html"], a[href="support.html"]')) {
+      el.href = `https://1120yg-allen.github.io/fly-fly/health-tracker/${el.getAttribute('href')}`;
+    }
+    if (IS_IOS_APP) {
+      // App Store 規範：健康資料不可存放在 iCloud，iPhone 版一律改稱「匯出備份檔」，由使用者自行決定存放位置
+      for (const el of document.querySelectorAll('[data-ios]')) el.textContent = el.dataset.ios;
+    }
     Native.init({
       onTake: (id) => takeFromNotification(id),
       onOpen: (view, profileId) => (view === 'advice' ? openAdvice(null, profileId) : showView(view)),
