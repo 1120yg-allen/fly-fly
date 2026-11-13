@@ -1,0 +1,20 @@
+/* 隱私權政策、支援頁面共用樣式 */
+:root { --bg: #f4f6f8; --card: #fff; --text: #1f2933; --muted: #6b7785; --border: #e3e8ee; --primary: #0f766e; }
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #111418; --card: #1b2026; --text: #e6eaef; --muted: #9aa5b1; --border: #2b323a; --primary: #2dd4bf; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.7 -apple-system, BlinkMacSystemFont, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif; }
+main { max-width: 720px; margin: 0 auto; padding: 24px 16px 48px; }
+h1 { font-size: 1.6rem; margin: 8px 0 4px; }
+h2 { font-size: 1.1rem; margin: 28px 0 8px; color: var(--primary); }
+p, li { overflow-wrap: anywhere; }
+ul, ol { padding-left: 1.3em; }
+a { color: var(--primary); }
+.meta { color: var(--muted); font-size: .9rem; }
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 4px 16px; margin: 12px 0; }
+table { width: 100%; border-collapse: collapse; font-size: .95rem; }
+th, td { text-align: left; vertical-align: top; padding: 8px 6px; border-bottom: 1px solid var(--border); }
+tr:last-child td { border-bottom: 0; }
+.table-wrap { overflow-x: auto; }
+h3 { font-size: 1rem; margin: 18px 0 2px; }

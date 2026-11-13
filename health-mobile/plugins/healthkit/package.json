@@ -1,0 +1,13 @@
+{
+  "name": "health-tracker-healthkit",
+  "version": "1.0.0",
+  "private": true,
+  "description": "健康紀錄 App 專用：讀取 Apple 健康（HealthKit）資料的 Capacitor 外掛（僅 iOS）",
+  "files": ["ios/Sources", "Package.swift"],
+  "capacitor": {
+    "ios": { "src": "ios" }
+  },
+  "peerDependencies": {
+    "@capacitor/core": ">=8.0.0"
+  }
+}
