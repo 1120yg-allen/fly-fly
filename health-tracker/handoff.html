@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>下載檔案｜健康紀錄</title>
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="doc.css">
+</head>
+<body>
+<main>
+  <h1>下載檔案</h1>
+  <p id="msg" class="meta">LINE 裡無法直接儲存檔案，所以改由瀏覽器下載。檔案內容只在你的手機上處理，不會上傳。</p>
+  <p><a id="link" style="display:none;font-size:1.1rem;font-weight:600"></a></p>
+  <p class="meta">下載後可以回到 LINE 繼續使用。</p>
+</main>
+<script>
+  'use strict';
+  // 檔案內容由 LINE 內的 App 放在網址的 # 後面帶過來（見 line.js）
+  (() => {
+    const p = new URLSearchParams(location.hash.slice(1));
+    const name = p.get('name'), data = p.get('data');
+    const msg = document.getElementById('msg');
+    if (!name || !data) { msg.textContent = '沒有可以下載的檔案，請回到健康紀錄再試一次。'; return; }
+    try {
+      const bytes = Uint8Array.from(atob(data), (c) => c.charCodeAt(0));
+      const a = document.getElementById('link');
+      a.href = URL.createObjectURL(new Blob([bytes], { type: p.get('mime') || 'application/octet-stream' }));
+      a.download = name.replace(/[^\w.\-一-鿿]/g, '_');
+      a.textContent = `⬇︎ 下載 ${a.download}`;
+      a.style.display = 'inline-block';
+      history.replaceState(null, '', location.pathname); // 不把資料留在網址列與瀏覽紀錄
+      a.click();
+    } catch {
+      msg.textContent = '檔案內容不完整，請回到健康紀錄再試一次。';
+    }
+  })();
+</script>
+</body>
+</html>

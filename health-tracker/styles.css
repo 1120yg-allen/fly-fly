@@ -347,3 +347,5 @@ textarea { resize: vertical; }
 .storage-status strong { font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
 .storage-status .ok { color: var(--ok); }
 .storage-status .warn { color: var(--warn); }
+#line-note[hidden], #paste-restore[hidden] { display: none; }
+#paste-restore textarea { width: 100%; font: inherit; font-size: .85rem; }

@@ -483,7 +483,13 @@ async function shareBackup() {
       if (e.name === 'AbortError') return 'cancelled';
     }
   }
-  download(name, await file.text(), 'application/json');
+  const text = await file.text();
+  if (Line.inClient && !Line.canSaveFile(text)) {
+    // LINE 裡無法下載、檔案又太大無法交給瀏覽器：改成複製文字，由使用者貼到記事本或傳給自己
+    await navigator.clipboard.writeText(text);
+    return 'copied';
+  }
+  download(name, text, 'application/json');
   return 'downloaded';
 }
 

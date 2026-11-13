@@ -175,3 +175,19 @@ spo2: {
 ## Android App
 
 同一份程式也可以安裝成 Android／iPhone App（系統通知在 App 關閉時也會提醒，資料不會被瀏覽器清除；iPhone 版可直接讀取 Apple 健康），見 [`../health-mobile`](../health-mobile/README.md)。
+
+## 在 LINE 裡使用（LINE MINI App）
+
+網頁版可以直接登記成 LINE MINI App，讓大家在 LINE 裡打開：
+
+1. 到 [LINE Developers Console](https://developers.line.biz/console/) 建立 Provider，再建立 **LINE MINI App** 頻道（地區：台灣）
+2. Endpoint URL 填 `https://1120yg-allen.github.io/fly-fly/health-tracker/`
+3. 把頻道的 LIFF ID 填到 [`config.js`](config.js) 的 `liffId`；「意見回饋」按鈕的網址填在 `feedbackUrl`（例如 Google 表單）
+
+在 LINE 裡開啟時（[`line.js`](line.js)）：
+
+- 「設定 → 關於 → 分享給朋友」會開啟 LINE 的好友選擇畫面
+- LINE 內建瀏覽器無法下載檔案：匯出與行事曆檔會交給手機的預設瀏覽器下載（`handoff.html`）；備份檔太大時改成複製備份文字，並可在設定貼上還原
+- LINE 裡沒有網頁通知：服藥提醒請用「匯出到行事曆」
+- Google 雲端硬碟一鍵備份不顯示（Google 不允許在內嵌瀏覽器登入）
+- 不會讀取 LINE 的個人資料

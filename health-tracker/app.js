@@ -676,6 +676,11 @@ function renderNotifyBanner() {
     });
     return;
   }
+  if (Line.inClient) {
+    btn.classList.add('hidden');
+    text.textContent = 'LINE 裡無法跳出通知，只會在打開 App 時提醒。請按「匯出到行事曆」，讓手機的行事曆在服藥時間提醒你。';
+    return;
+  }
   const perm = notificationsSupported() ? Notification.permission : 'unsupported';
   btn.classList.toggle('hidden', perm !== 'default');
   text.textContent = {
@@ -1691,6 +1696,11 @@ function download(filename, content, mime) {
     // App 內無法直接下載檔案：改用系統分享選單（可存到雲端硬碟、檔案、LINE…）
     return Native.shareFile(filename, content).catch((e) => toast(`無法分享檔案：${e.message || e}`));
   }
+  if (Line.inClient) {
+    // LINE 內建瀏覽器無法下載檔案：交給手機的預設瀏覽器
+    if (Line.canSaveFile(content)) return Line.saveFile(filename, content, mime);
+    return toast('檔案太大，LINE 裡無法匯出。請改用「備份」複製備份內容。');
+  }
   const blob = new Blob([content], { type: mime });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -1788,7 +1798,8 @@ async function backupNow() {
   }
   const r = await shareBackup();
   if (r !== 'cancelled') markBackedUp();
-  if (r === 'downloaded') toast('已下載備份檔，可存到 iCloud 雲端硬碟或 Google 雲端硬碟');
+  if (r === 'downloaded' && !Line.inClient) toast('已下載備份檔，可存到 iCloud 雲端硬碟或 Google 雲端硬碟');
+    if (r === 'copied') toast('備份檔太大無法下載，已複製備份內容：請貼到記事本，或用 LINE 傳給自己保存');
 }
 
 function exportCSV() {
@@ -1952,7 +1963,7 @@ function applyHealthImport() {
 function renderCloudBackup() {
   $('#hi-profile').textContent = currentProfile().name;
   // Google 不允許在 App 內嵌的網頁中登入，App 版改用分享選單存到雲端硬碟
-  document.querySelector('.gdrive').classList.toggle('hidden', Native.enabled);
+  document.querySelector('.gdrive').classList.toggle('hidden', Native.enabled || Line.inClient);
   const g = local.gdrive || {};
   if (document.activeElement !== $('#gdrive-client')) $('#gdrive-client').value = g.clientId || '';
   const configured = !!GDrive.clientId();
@@ -2144,13 +2155,31 @@ async function init() {
   // Apple／Google
   $('#hi-file').addEventListener('change', (e) => { onHealthFiles(e.target.files); e.target.value = ''; });
   $('#btn-hk').addEventListener('click', onHealthKitRead);
+  $('#btn-feedback').href = window.HEALTH_TRACKER_CONFIG?.feedbackUrl || 'https://github.com/1120yg-allen/fly-fly/issues';
+  $('#btn-share-app').addEventListener('click', async () => {
+    try {
+      if (await Line.share() === 'copied') toast('已複製介紹與連結，可以貼給朋友');
+    } catch { toast('無法分享，請直接複製網址給朋友'); }
+  });
+  if (Line.inClient) {
+    Line.init();
+    $('#line-note').hidden = false;
+    $('#paste-restore').hidden = false;
+    $('#btn-paste-restore').addEventListener('click', () => {
+      try {
+        toast(`已還原 ${importBackupData(JSON.parse($('#paste-restore-text').value))} 筆新資料`);
+        $('#paste-restore-text').value = '';
+      } catch { toast('備份內容不完整或格式不對，請重新複製整段文字'); }
+    });
+  }
   if (Native.healthKit) {
     Native.healthKit.available().then((ok) => { $('#btn-hk').hidden = !ok; $('#hk-note').hidden = !ok; });
   }
   $('#btn-share-backup').addEventListener('click', async () => {
     const r = await shareBackup();
     if (r !== 'cancelled') markBackedUp();
-    if (r === 'downloaded') toast('已下載備份檔，可存到 iCloud 雲端硬碟或 Google 雲端硬碟');
+    if (r === 'downloaded' && !Line.inClient) toast('已下載備份檔，可存到 iCloud 雲端硬碟或 Google 雲端硬碟');
+    if (r === 'copied') toast('備份檔太大無法下載，已複製備份內容：請貼到記事本，或用 LINE 傳給自己保存');
   });
   $('#btn-backup-now').addEventListener('click', backupNow);
   $('#btn-persist').addEventListener('click', async () => {

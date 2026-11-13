@@ -375,6 +375,11 @@
         <div id="hi-preview" class="hi-preview" hidden></div>
       </div>
 
+      <div id="line-note" class="card form" hidden>
+        <p class="small"><strong>你正在 LINE 裡使用健康紀錄</strong></p>
+        <p class="muted small">資料存在這支手機的 LINE 裡。清除 LINE 的快取或重新安裝 LINE 可能會清掉紀錄，請常用下方的備份功能。LINE 裡無法跳出服藥通知，請在「服藥」頁用「匯出到行事曆」讓手機提醒。</p>
+      </div>
+
       <h2 class="section-title" id="backup-section" data-ios="備份與還原">雲端備份（iCloud／Google 雲端硬碟）</h2>
       <div class="card form">
         <p class="muted small">把所有成員、紀錄、藥物、檢驗報告存成一個備份檔，換手機或清除瀏覽器資料後可以還原。</p>
@@ -383,6 +388,12 @@
           <label class="btn file-btn" for="import-file">從備份檔還原</label>
         </div>
         <p class="muted small" data-ios="備份檔會透過系統的分享選單交給你，由你決定要存放的位置（例如「儲存到檔案」）。App 不會自動把健康資料上傳到任何雲端服務。還原時按「從備份檔還原」選擇該檔案即可。">iPhone：在分享選單選「儲存到檔案 → iCloud 雲端硬碟」。Android：選「雲端硬碟」。還原時從檔案選單打開 iCloud 雲端硬碟或 Google 雲端硬碟中的備份檔即可。</p>
+        <details id="paste-restore" class="howto" hidden>
+          <summary>用備份文字還原</summary>
+          <p class="muted small">備份檔太大時，LINE 裡會改成「複製備份內容」。把當時複製的文字貼在下面即可還原。</p>
+          <textarea id="paste-restore-text" rows="4" placeholder="貼上備份內容" autocomplete="off" spellcheck="false"></textarea>
+          <div class="form-actions"><button type="button" id="btn-paste-restore" class="btn">還原</button></div>
+        </details>
         <div class="gdrive">
           <div class="field-label">Google 雲端硬碟一鍵備份</div>
           <div class="form-actions wrap">
@@ -421,6 +432,10 @@
           <a class="btn" href="privacy.html" target="_blank" rel="noopener">隱私權政策</a>
           <a class="btn" href="support.html" target="_blank" rel="noopener">使用說明與支援</a>
         </div>
+        <div class="form-actions wrap">
+          <button type="button" id="btn-share-app" class="btn">分享給朋友</button>
+          <a class="btn primary" id="btn-feedback" target="_blank" rel="noopener">意見回饋</a>
+        </div>
       </div>
     </section>
   </main>
@@ -456,6 +471,7 @@
   <script src="ocr.js"></script>
   <script src="advice.js"></script>
   <script src="config.js"></script>
+  <script src="line.js"></script>
   <script src="integrations.js"></script>
   <script src="app.js"></script>
 </body>
